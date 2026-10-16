@@ -27,7 +27,7 @@ def run(root: Path, js: str, seconds: float) -> dict:
     with error_gate._serve(root) as base_url, sync_playwright() as pw:
         browser = error_gate._browser(pw)
         try:
-            page = error_gate._open(browser, base_url, errors, blocked)
+            page = error_gate._open(browser, base_url, errors, blocked, settle=False)
             if page is None:
                 return {"ok": False, "error": "the page did not load: " + errors[0]["message"]}
             page.on("console", lambda m: console.append(m.text))

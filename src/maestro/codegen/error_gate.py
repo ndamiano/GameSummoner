@@ -131,7 +131,8 @@ def _browser(pw):
         args=["--force-webrtc-ip-handling-policy=disable_non_proxied_udp"])
 
 
-def _open(browser, base_url: str, errors: List[Dict[str, str]], blocked: List[str]):
+def _open(browser, base_url: str, errors: List[Dict[str, str]], blocked: List[str],
+          settle: bool = True):
     """One fresh page on the game, wired to report: uncaught errors, a script the page asked for
     and did not get, every request that tried to leave. None when the page could not load — the
     failure to load is itself the error, and it is already recorded."""
@@ -171,7 +172,8 @@ def _open(browser, base_url: str, errors: List[Dict[str, str]], blocked: List[st
             errors.append({"message": f"page did not finish loading: {e}", "stack": ""})
         page.close()
         return None
-    page.wait_for_timeout(PROBE_SECONDS * 500)
+    if settle:
+        page.wait_for_timeout(PROBE_SECONDS * 500)
     return page
 
 
