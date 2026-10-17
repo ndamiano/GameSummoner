@@ -19,7 +19,7 @@ QUEUE_USD_PER_HOUR = {
     "image": 1.01,   # RTX 5090
     "mesh":  1.01,   # RTX 5090
     "video": 1.01,   # RTX 5090
-    "decide": 1.01,  # RTX 5090
+    "decide": 2.21,  # RTX PRO 6000 Blackwell
 }
 
 

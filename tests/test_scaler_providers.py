@@ -47,6 +47,13 @@ def test_runpod_ladder_is_the_preferred_card_alone_then_the_list_volume_by_volum
     assert provider.rungs("image") == []
 
 
+def test_a_queue_with_policy_but_no_cards_is_served_only_by_the_other_providers():
+    block = {**RP, "queues": {**RP["queues"], "decide": {"max_workers": 1, "boot_seconds": 200}}}
+    provider, client = _runpod(block)
+    assert provider.rungs("decide") == []
+    client.gpu_prices.assert_not_called()
+
+
 def test_runpod_with_no_prices_still_offers_its_rungs_last():
     provider, client = _runpod()
     client.gpu_prices.side_effect = RunPodError("graphql down")

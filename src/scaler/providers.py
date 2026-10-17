@@ -92,10 +92,10 @@ class RunPodProvider:
     def rungs(self, queue: str) -> List[Rung]:
         """Per volume the head card alone, then the list, priced at its dearest card or last"""
         rp = self._block()
-        qcfg = (rp.get("queues") or {}).get(queue)
-        if not qcfg:
+        qcfg = (rp.get("queues") or {}).get(queue) or {}
+        ids = list(qcfg.get("gpu_type_ids") or [])
+        if not ids:
             return []
-        ids = list(qcfg["gpu_type_ids"])
         try:
             prices = self._client.gpu_prices(rp.get("cloud_type", "SECURE"))
         except _RUNPOD_ERRORS as e:
