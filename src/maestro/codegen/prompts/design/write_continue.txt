@@ -1,0 +1,5 @@
+<spec_so_far>
+{spec_so_far}
+</spec_so_far>
+
+The spec in <spec_so_far> is the document being written; it was cut off by an output limit at the exact point it ends. Continue it from that point: first finish the sentence, list or table row it stopped in, then write the remaining sections in order through section A. Write nothing that is already in <spec_so_far> — no recap, no repeated headings, no preamble — the output is appended to it verbatim. Stop when section A is complete.

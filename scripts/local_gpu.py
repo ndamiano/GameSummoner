@@ -52,8 +52,8 @@ IDLE_TICKS = 3          # empty polls before a queue counts as drained; a contin
                         # once" is not empty
 POLL_SECONDS = 2.0
 
-QUEUES = ["llm", "image", "mesh", "video"]
-PRIORITY = {"llm": 0, "image": 1, "mesh": 2, "video": 3}  # tie-break when nothing is currently held
+QUEUES = ["decide", "llm", "image", "mesh", "video"]
+PRIORITY = {"decide": 0, "llm": 1, "image": 2, "mesh": 3, "video": 4}  # tie-break when nothing is currently held
 # A pending job the control plane's reaper will fail before the held queue drains has to be served
 # first: one card, a build whose turns re-fill the llm queue as fast as it empties, and five
 # sheets waited 30 minutes behind it for a worker that never came (2026-09-04, two of five lost).
@@ -88,6 +88,15 @@ def _ninfer_artifact() -> Path:
 
 
 def _leg(queue: str) -> dict:
+    if queue == "decide":
+        return {
+            "port": IMAGE_PORT,
+            "ready": f"http://127.0.0.1:{IMAGE_PORT}/health",
+            "argv": [str(IMAGES_DIR / "local" / "decide" / "run.sh"), str(_worker_env("decide"))],
+            "cwd": None,
+            "env": {},
+            "boxed": True,
+        }
     if queue == "llm":
         return {
             "port": 8090,
@@ -195,11 +204,12 @@ def _spawn_image(queue: str, leg: dict) -> subprocess.Popen:
                   {"PYTHONPATH": str(IMAGES_DIR), "SAFETY_MODEL_DIR": SAFETY_MODEL_DIR})
 
 
-def _spawn_worker(queue: str) -> subprocess.Popen:
+def _worker_env(queue: str) -> Path:
     from db import workers
     worker_id = f"{socket.gethostname()}-{uuid.uuid4().hex[:6]}"
     workers.worker_created(worker_id, None, queue, None, 0.0)
     settings = _settings()
+    LOGS.mkdir(parents=True, exist_ok=True)
     env_file = LOGS / f"{queue}-env.json"
     env_file.write_text(json.dumps({
         "CP_URL": "http://localhost:8000",
@@ -210,6 +220,11 @@ def _spawn_worker(queue: str) -> subprocess.Popen:
         "IDLE_EXIT_SECONDS": "31536000",
         "JOB_TIMEOUT_SECONDS": str((settings.get("workqueue") or {}).get("job_timeout_seconds", 1800)),
     }))
+    return env_file
+
+
+def _spawn_worker(queue: str) -> subprocess.Popen:
+    env_file = _worker_env(queue)
     return _spawn(f"{queue}-worker",
                   [sys.executable, "-m", "gamesummoner_worker", "--env-file", str(env_file),
                    "--image", f"http://127.0.0.1:{IMAGE_PORT}"],
@@ -292,16 +307,19 @@ def drain(queue: str, *, keep: bool, ready_timeout: float) -> None:
     worker = sidecar = image = None
     try:
         _await_ready(f"{queue}-server", queue, leg["ready"], server, ready_timeout)
-        sidecar = _spawn_sidecar(queue, leg)
-        image = _spawn_image(queue, leg)
-        worker = _spawn_worker(queue)
+        if not leg.get("boxed"):
+            sidecar = _spawn_sidecar(queue, leg)
+            image = _spawn_image(queue, leg)
+            worker = _spawn_worker(queue)
 
         idle = 0
         while idle < IDLE_TICKS:
             time.sleep(POLL_SECONDS)
-            if worker.poll() is not None:
+            if server.poll() is not None:
+                raise SystemExit(f"[{queue}] server exited — see {LOGS / f'{queue}-server.log'}")
+            if worker is not None and worker.poll() is not None:
                 raise SystemExit(f"[{queue}] worker exited — see {LOGS / f'{queue}-worker.log'}")
-            if image.poll() is not None:
+            if image is not None and image.poll() is not None:
                 raise SystemExit(f"[{queue}] contract server exited — see {LOGS / f'{queue}-image.log'}")
             left = _waiting(queue)
             if left:
@@ -389,9 +407,10 @@ def auto(idle_exit: Optional[float], ready_timeout: float) -> None:
         else:
             server = _spawn(f"{queue}-server", leg["argv"], leg["cwd"], leg["env"])
             _await_ready(f"{queue}-server", queue, leg["ready"], server, ready_timeout)
-        sidecar = _spawn_sidecar(queue, leg)
-        image = _spawn_image(queue, leg)
-        worker = _spawn_worker(queue)
+        if not leg.get("boxed"):
+            sidecar = _spawn_sidecar(queue, leg)
+            image = _spawn_image(queue, leg)
+            worker = _spawn_worker(queue)
         held = queue
 
     try:
@@ -424,6 +443,8 @@ def auto(idle_exit: Optional[float], ready_timeout: float) -> None:
                     _start(action)
                     _log_auto(f"[{action}] ready in {time.time() - t0:.0f}s", auto_log)
 
+            if server is not None and server.poll() is not None:
+                raise SystemExit(f"[{held}] server exited — see {LOGS / f'{held}-server.log'}")
             if worker is not None and worker.poll() is not None:
                 raise SystemExit(f"[{held}] worker exited — see {LOGS / f'{held}-worker.log'}")
             if image is not None and image.poll() is not None:
@@ -438,7 +459,7 @@ def auto(idle_exit: Optional[float], ready_timeout: float) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("queues", nargs="+", help="llm, image, mesh, all, or auto")
+    parser.add_argument("queues", nargs="+", help="decide, llm, image, mesh, video, all, or auto")
     parser.add_argument("--keep", action="store_true",
                         help="leave the model server up after the queue empties")
     parser.add_argument("--ready-timeout", type=float, default=300.0)

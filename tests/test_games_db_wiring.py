@@ -70,7 +70,7 @@ def test_new_game_creates_the_run_and_starts_its_design(client, monkeypatch):
     assert r.json()["status"] == "designing" and started == []
     spec = RunState(run_id).read_spec()
     assert spec["ask"] == "an open world RPG with card combat" and "request" not in spec
-    assert enqueued == [{"stage": "design", "run_id": run_id, "step": "gameplay"}]
+    assert enqueued == [{"stage": "design", "run_id": run_id, "step": "decide"}]
     assert games.owner_of(run_id) == user.id
     assert ledger.balance(user.id) == 9
     assert games.game(run_id)["granted_micros"] == MICROS_PER_CREDIT

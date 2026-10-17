@@ -189,7 +189,7 @@ async def complete(body: CompleteBody, request: Request):
                      body.result, body.error, body.job_id, body.exec_seconds)
     elif metadata.get("stage") == "design":
         follow_up = (design.on_complete, metadata["run_id"], outcome["build_id"], body.result,
-                     body.error, metadata.get("step", "gameplay"))
+                     body.error, metadata["step"])
     else:
         follow_up = (asset_chain.on_completion, metadata, body.result, outcome["batch_id"],
                      outcome["batch_complete"])

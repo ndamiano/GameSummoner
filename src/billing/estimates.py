@@ -10,6 +10,7 @@ QUEUE_SECONDS_ESTIMATES = {
     "image": 33,
     "mesh":  48,
     "video": 166,
+    "decide": 20,
 }
 
 # The most expensive card each queue's pods are created on, priced at RunPod's rate.
@@ -18,6 +19,7 @@ QUEUE_USD_PER_HOUR = {
     "image": 1.01,   # RTX 5090
     "mesh":  1.01,   # RTX 5090
     "video": 1.01,   # RTX 5090
+    "decide": 1.01,  # RTX 5090
 }
 
 

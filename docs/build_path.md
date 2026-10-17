@@ -299,26 +299,32 @@ src/
                          A top-up RESUMES a mesh from its `<id>.src.png` if one is there: the chain
                          needs ComfyUI and then TRELLIS, and a one-GPU box holds one at a time, so
                          always restarting at the image leg never reached the second half.
-      design.py          the DESIGN TEAM — four inferences between the user's words and the build.
-                         Each is its own prompt under prompts/design/: gameplay from spec.json's
-                         `ask` (the words, verbatim, kept for the human to see); visual and
-                         engineering from the ask and gameplay.md, enqueued together; the integrator
-                         from all three, merging them into one spec with fixed sections (scope with
-                         tiers, conventions, contracts, visual, gameplay, characters, audio, UX,
-                         debug API, tests, build order, definition of done, sanity). A reply that
-                         stops before the last section is continued (integrate_continue.txt appended
-                         to the same prompt with the text so far), up to three times. Every reply is
-                         kept under runs/<id>/design/; the merged spec is runs/<id>/design.md, seeded
+      design.py          the DESIGN STAGE — decisions, then one writer, between the user's words
+                         and the build. One `decide` job asks JEV (a calibrated decision model, its
+                         own queue) every decision in prompts/design/decisions.json in order, each
+                         answer appended to the state the next question sees: the frame (2d/3d,
+                         camera, time, movement, session, failure, tone, size, endings), yes/no on
+                         every mechanic in prompts/design/mechanics.md, how sure JEV is that the
+                         first playable version needs each kept mechanic, then look and sound. The
+                         image runs the chain without knowing what a game is. The kept mechanics are
+                         banded on the first-playable probability (core >= 0.6, supporting >= 0.3,
+                         extra below) and one llm call (write.txt) writes the spec from the banded
+                         state and the ask, with fixed sections (scope with tiers, conventions,
+                         contracts, visual, gameplay, characters, audio, UX, debug API, tests, build
+                         order, definition of done, sanity); tier 1 is exactly the core mechanics,
+                         already in the chosen art and sound. A reply that stops before the last
+                         section is continued (write_continue.txt appended to the same prompt with
+                         the text so far), up to three times. The decide result is kept as
+                         runs/<id>/design/decisions.json; the spec is runs/<id>/design.md, seeded
                          into the game folder as design/design.md beside docs/ (the generate_media
                          and compose_world guidance). Neither folder is published: they are ours, not
                          the game's. `request` is the two-line prompt (prompts/request.txt) naming
-                         the ask and the spec; it is absent while the design is pending. Web: one llm
-                         job per step, tagged metadata.stage="design" and .step, each completion
-                         enqueuing the next (an atomic marker makes the integrator ask happen once
-                         when visual and engineering land together); the last writes `request`,
+                         the ask and the spec; it is absent while the design is pending. Web: the
+                         decide job then the write job, tagged metadata.stage="design" and .step,
+                         each completion enqueuing the next; the last writes `request`,
                          emits `prompt_proposed` and KICKS OFF THE BUILD — no human reads the design
                          first. A step that comes back empty is asked once more; one that fails, or
-                         comes back empty again, writes `request = ask` and builds on that. A kickoff the budget refuses leaves the run designed and
+                         comes back empty again (a decide job that fails, twice), writes `request = ask` and builds on that. A kickoff the budget refuses leaves the run designed and
                          idle, and the page's Build button retries it. CLI: the same chain,
                          synchronous, and the build is the CLI's own next call. The
                          create call is where the game is charged — the credit, and the
@@ -400,8 +406,8 @@ src/
                          for the admin panel. The image side of the same policy is asset_chain's
                          `_admit` above.
       prompts/           build.txt (the one system prompt every build turn reads),
-                         request.txt (the build's user message), design/*.txt (the four design
-                         calls and the integrator's continuation suffix), play_turn.txt / play_verdict.txt /
+                         request.txt (the build's user message), design/ (the decide chain, the
+                         mechanics catalogue, the writer and its continuation suffix), play_turn.txt / play_verdict.txt /
                          play_fix_note.txt (the play gate's session, closing report and fix
                          note), probe_targets.txt (the gate asking
                          where to press), error_gate_note.txt (the fix note an

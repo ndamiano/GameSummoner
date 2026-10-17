@@ -1,30 +1,40 @@
-You are the lead designer on a design team for a browser game an agentic AI will build. Three 
-colleagues each wrote one portion of the design of the same request — gameplay.md, visual.md, and
-engineering.md. Gameplay was written first, and visual and engineering were given the gameplay as
-reference.
+You are the lead designer for a browser game an agentic AI will build. The high-level decisions for
+this game are already made and are final:
 
-Your goal is to take the documents they created and merge them into a single design that supersedes
-the original. You will need to make rulings on anything they disagree about, and fill in any gaps
-that they left because they didn't have the others documents. If you drop anything from their
-designs, you have to document why.
+{state}
+
+Your job is everything those decisions leave open: the concrete content (who the player is, the
+enemies, traps, pickups and their numbers), the rules of every system with their numbers, how the
+player's input drives the game, the structure of a run, the visuals and audio within the chosen
+style, and the engineering contracts. Where a decision is a list of parts, the game has exactly
+those parts; do not add systems the decisions left out.
+
+The mechanics come in three bands. The core mechanics are the game: tier 1 is exactly them, each
+one finished, tuned and fun on its own before anything else is built. The supporting mechanics are
+tier 2 and the extra mechanics are tier 3 and later; each is a small, complete addition on top of a
+working tier 1, never a dependency of it. Every mechanic, in every band, is a concrete thing the
+player sees on screen and uses with a named input, with its numbers.
+
+The tiers band mechanics, not polish. The look and sound decisions hold from tier 1: tier 1 is
+already drawn in the chosen art style and palette, animated, heard through its sound effects and
+music, and shows its effects and HUD. Later tiers add mechanics and content, never the first art,
+sound or juice.
 
 The design spec has these sections, in this order, with these headings:
 
 # 0. SCOPE
 ## 0.1 Asked
-A table with requirements that come directly from the user's request, as well as the designs from
-the gameplay design.
+A table with the requirements that come directly from the user's request and the decisions above.
 | Requirement | Where it lives |
 | --- | --- |
 
 ## 0.2 Decisions
-Document any decisions you made here with why. This should be in tabular format, with the designs
-each in their own column, and your ruling / reasoning in the final column. Your rulings are *final*,
-so it is important that the decision is documented as to why. 
+A table of every decision above and every decision you made yourself, with why. Where the decisions
+above leave something open, your ruling is final, so document it.
 
 ## 0.3 Tiers
-This is a priority list of segments. Tier 1 is what you'd say, given the user's and design's
-requirements means "minimal viable game." Tiers 2+ should be incremental improvements that make the
+This is a priority list of segments. Tier 1 is the core mechanics, built into a minimal viable game
+the player can finish. Tiers 2+ should be incremental improvements that make the
 game into a better game. You may create as many tiers as you'd like, and each system in future
 sections should get its tier listed so that the agent building this can make a decision on whether
 it can say it's finished or not. Tier 1 will be guaranteed to build, while higher tiers may be
@@ -32,8 +42,7 @@ left unbuilt.
 
 # 1. CONVENTIONS
 ## 1.1 Units, axes, frames
-In general, this should come from the engineering design. In any case, the first section is all of
-the universal important numbers. Units for anything that needs it (IE, speed units), etc.
+The universal important numbers. Units for anything that needs it (IE, speed units), etc.
 
 ## 1.2 Important conventions
 This section should include important rules all files should follow, such as using a specific random
@@ -44,20 +53,19 @@ source or the fixed step loop.
 ## 2.2 Global context
 ## 2.3 Module specifics
 
-From engineering.md, with every field the gameplay records need present in the global context and
-every function a rule or a test needs present in a module.
+Every field the gameplay records need present in the global context and every function a rule or
+a test needs present in a module.
 
 # 3. VISUAL SPEC
-The look in one paragraph, then lighting and atmosphere, then the space, then the recipe table, from
-visual.md; ruled against gameplay where a visual implies a rule.
+The look in one paragraph, then lighting and atmosphere, then the space, then the recipe table; consistent with
+gameplay where a visual implies a rule.
 
 # 4. GAMEPLAY SPEC
 The game in one paragraph, then the records with their rosters, then one subsection per system made
 of its rules with the numbers, tagged with its tier; then progression and difficulty; then feel.
-From gameplay.md, with every number gameplay gave carried as given.
 
 # 5. CHARACTERS
-Silhouettes, animations by name with their motion rules, facings; from visual.md, with the states
+Silhouettes, animations by name with their motion rules, facings, with the states
 gameplay's rules need.
 
 # 6. AUDIO
@@ -66,10 +74,10 @@ giving the name, the recipe of how to make it (waveforms / frequencies, etc) and
 
 # 7. UX
 HTML and CSS only; the screens as a state machine and the HUD as a table of element → record field →
-when visible, merged from gameplay's screens and visual's feedback.
+when visible.
 
 # 8. DEBUG API
-From engineering.md, extended with one function per gameplay system that reaches its state directly,
+One function per gameplay system that reaches its state directly,
 and the player's inputs as functions.
 
 # 9. TESTS
@@ -93,21 +101,6 @@ their results. Even with this section, if you find an error, you should fix it i
 and this section should exist as a small log of "here's what I validated, here's why it was or was
 not valid, and here's what it is now."
 
-Carry tables as tables and numbers as numbers. Do not summarize where a colleague wrote the detail;
-the builder gets the detail only from you.
+Carry tables as tables and numbers as numbers. Do not summarize; the builder gets the detail only from you.
 
-<request>
-{request}
-</request>
-
-<gameplay.md>
-{gameplay}
-</gameplay.md>
-
-<visual.md>
-{visual}
-</visual.md>
-
-<engineering.md>
-{engineering}
-</engineering.md>
+The player's request: {request}

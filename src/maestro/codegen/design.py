@@ -1,10 +1,11 @@
-"""The design stage: four llm calls write the build spec, landed as design/design.md in the game
-folder, with the ask itself as the fallback prompt."""
+"""The design stage: one decide job has JEV make the game's decisions, then one llm call writes the
+build spec from them, landed as design/design.md in the game folder, with the ask itself as the
+fallback prompt."""
 
 from __future__ import annotations
 
+import json
 import logging
-import os
 import re
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -19,11 +20,14 @@ _PROMPTS = Path(__file__).parent / "prompts"
 _SYSTEM = "You design browser games."
 MAX_TOKENS = 100000
 DESIGN_DIR = "design"
-STEPS = ("gameplay", "visual", "engineering", "integrate")
+DECISIONS = "decisions.json"
+CENTRALITY = "first playable"
+CORE, SUPPORT = 0.6, 0.3
 SECTIONS = [str(n) for n in range(12)] + ["A"]
 CONTINUATIONS = 3
 RETRIES = 1
 _HEADING = re.compile(r"^#+\s*(\d+|A)\.", re.M)
+_ROW = re.compile(r"^\| ([^|]+?) \| ([^|]+?) \|$", re.M)
 
 
 def _prompt(name: str, **slots) -> str:
@@ -33,10 +37,40 @@ def _prompt(name: str, **slots) -> str:
     return text
 
 
-def _messages(step: str, ask: str, docs: Dict[str, str], spec_so_far: str = "") -> list:
-    body = _prompt(step, request=ask, **docs)
-    if step == "integrate" and spec_so_far:
-        body += "\n\n" + _prompt("integrate_continue", spec_so_far=spec_so_far)
+def _catalogue(name: str) -> List[Dict[str, str]]:
+    rows = _ROW.findall((_PROMPTS / "design" / name).read_text(encoding="utf-8"))
+    return [{"name": n, "text": f"{n}: {d}"} for n, d in rows if n != "Mechanic"]
+
+
+def chain(ask: str) -> Dict:
+    """The decide job: every decision in decisions.json, each answer carried into the next's state."""
+    steps = json.loads((_PROMPTS / "design" / "decisions.json").read_text(encoding="utf-8"))["steps"]
+    for step in steps:
+        items = step.get("items")
+        if isinstance(items, str):
+            step["items"] = _catalogue(items)
+        elif items is not None:
+            step["items"] = [{"name": i, "text": i} for i in items]
+    return {"kind": "decide", "state": f"Game prompt: {ask}", "steps": steps}
+
+
+def tiered_state(decided: Dict) -> str:
+    """The decided state with its mechanics banded by JEV's first-playable probabilities."""
+    probs = next((s.get("probabilities") or {} for s in decided["steps"] if s["key"] == CENTRALITY), {})
+    order = sorted(probs, key=lambda m: -probs[m])
+    bands = {"core mechanics": [m for m in order if probs[m] >= CORE],
+             "supporting mechanics": [m for m in order if SUPPORT <= probs[m] < CORE],
+             "extra mechanics": [m for m in order if probs[m] < SUPPORT]}
+    lines = [line for line in decided["state"].splitlines() if not line.startswith("mechanics:")]
+    at = next((i for i, line in enumerate(lines) if line.startswith("art style:")), len(lines))
+    lines[at:at] = [f"{band}: {', '.join(names) or 'none'}" for band, names in bands.items()]
+    return "\n".join(lines)
+
+
+def _messages(ask: str, state: str, spec_so_far: str = "") -> list:
+    body = _prompt("write", state=state, request=ask)
+    if spec_so_far:
+        body += "\n\n" + _prompt("write_continue", spec_so_far=spec_so_far)
     return MessageBuilder(_SYSTEM).add_user(body).build()
 
 
@@ -47,10 +81,8 @@ def _design_dir(run_id: str) -> Path:
     return d
 
 
-def _docs(run_id: str) -> Dict[str, str]:
-    d = _design_dir(run_id)
-    return {s: (d / f"{s}.md").read_text(encoding="utf-8")
-            for s in STEPS[:3] if (d / f"{s}.md").is_file()}
+def _state(run_id: str) -> str:
+    return tiered_state(json.loads((_design_dir(run_id) / DECISIONS).read_text(encoding="utf-8")))
 
 
 def missing_sections(text: str) -> List[str]:
@@ -97,34 +129,25 @@ def _start_build(run_id: str) -> None:
 
 
 def _enqueue_step(run_id: str, build_id: str, ask: str, step: str, spec_so_far: str = "") -> None:
-    conn = get_connector()
-    payload, model = conn.build_llm_job(_messages(step, ask, _docs(run_id), spec_so_far), [],
-                                        MAX_TOKENS)
+    metadata = {"stage": "design", "run_id": run_id, "step": step}
+    if step == "decide":
+        jobs.enqueue_job("decide", chain(ask), game_id=run_id, build_id=build_id, metadata=metadata)
+        return
+    payload, model = get_connector().build_llm_job(_messages(ask, _state(run_id), spec_so_far), [],
+                                                   MAX_TOKENS)
     jobs.enqueue_job("llm", payload, game_id=run_id, build_id=build_id, model=model,
-                     metadata={"stage": "design", "run_id": run_id, "step": step})
+                     metadata=metadata)
 
 
 def enqueue(run_id: str, ask: str) -> None:
     build_id = games.create_build(run_id, kind="design")
     games.build_started(build_id)
     try:
-        _enqueue_step(run_id, build_id, ask, "gameplay")
+        _enqueue_step(run_id, build_id, ask, "decide")
     except Exception:
         logger.exception("design for %s could not be enqueued", run_id)
         games.build_finished(build_id, "failed")
         _land(run_id, ask)
-
-
-def _integrator_ready(run_id: str) -> bool:
-    """True for exactly one of the two callers racing here, so the integrator is asked for once."""
-    d = _design_dir(run_id)
-    if not all((d / f"{s}.md").is_file() for s in ("visual", "engineering")):
-        return False
-    try:
-        os.mkdir(d / ".integrating")
-    except FileExistsError:
-        return False
-    return True
 
 
 def _retry(run_id: str, step: str) -> bool:
@@ -141,36 +164,37 @@ def on_complete(run_id: str, build_id: Optional[str], result: Optional[Dict],
                 error: Optional[str], step: str) -> None:
     from maestro.state import RunState
     ask = (RunState(run_id).read_spec() or {}).get("ask", "")
-    text = _reply_text(result) if error is None else ""
     d = _design_dir(run_id)
+    if step == "decide":
+        if error is None and result and result.get("state"):
+            (d / DECISIONS).write_text(json.dumps(result, indent=1, ensure_ascii=False),
+                                       encoding="utf-8")
+            _next(run_id, build_id, ask, "write")
+        elif _retry(run_id, step):
+            _next(run_id, build_id, ask, "decide")
+        else:
+            _fallback(run_id, build_id, ask, f"decide failed ({error or 'no state'})")
+        return
+    text = _reply_text(result) if error is None else ""
+    spec = d / "spec.md"
     if not text.strip():
         if error is None and _retry(run_id, step):
-            spec = d / "spec.md"
             _next(run_id, build_id, ask, step,
-                  spec_so_far=spec.read_text(encoding="utf-8") if step == "integrate" and spec.is_file() else "")
+                  spec_so_far=spec.read_text(encoding="utf-8") if spec.is_file() else "")
             return
         _fallback(run_id, build_id, ask, f"{step} landed with nothing ({error or 'empty reply'})")
         return
-    if step == "integrate":
-        spec = d / "spec.md"
-        text = (spec.read_text(encoding="utf-8") if spec.is_file() else "") + text
-        spec.write_text(text, encoding="utf-8")
-        rounds = int((d / ".rounds").read_text()) if (d / ".rounds").is_file() else 0
-        if missing_sections(text) and rounds < CONTINUATIONS:
-            (d / ".rounds").write_text(str(rounds + 1))
-            _next(run_id, build_id, ask, "integrate", spec_so_far=text)
-            return
-        if build_id:
-            games.build_finished(build_id, "succeeded", steps=1)
-        _land_spec(run_id, text, ask)
-        _start_build(run_id)
+    text = (spec.read_text(encoding="utf-8") if spec.is_file() else "") + text
+    spec.write_text(text, encoding="utf-8")
+    rounds = int((d / ".rounds").read_text()) if (d / ".rounds").is_file() else 0
+    if missing_sections(text) and rounds < CONTINUATIONS:
+        (d / ".rounds").write_text(str(rounds + 1))
+        _next(run_id, build_id, ask, "write", spec_so_far=text)
         return
-    (d / f"{step}.md").write_text(text, encoding="utf-8")
-    if step == "gameplay":
-        _next(run_id, build_id, ask, "visual")
-        _next(run_id, build_id, ask, "engineering")
-    elif _integrator_ready(run_id):
-        _next(run_id, build_id, ask, "integrate")
+    if build_id:
+        games.build_finished(build_id, "succeeded", steps=1)
+    _land_spec(run_id, text, ask)
+    _start_build(run_id)
 
 
 def _next(run_id: str, build_id: Optional[str], ask: str, step: str, spec_so_far: str = "") -> None:
@@ -181,13 +205,22 @@ def _next(run_id: str, build_id: Optional[str], ask: str, step: str, spec_so_far
         _fallback(run_id, build_id, ask, f"{step} refused")
 
 
-def _call(step: str, ask: str, docs: Dict[str, str], spec_so_far: str = "") -> str:
+def _decide(ask: str) -> Dict:
+    from workqueue.client import run_job
+    for _ in range(RETRIES + 1):
+        job = run_job("decide", chain(ask))
+        if job["status"] == "done" and (job.get("result") or {}).get("state"):
+            return job["result"]
+    raise ValueError(f"decide failed: {job.get('error') or 'no state'}")
+
+
+def _write(ask: str, state: str, spec_so_far: str) -> str:
     for _ in range(RETRIES + 1):
         text = _reply_text(get_connector().generate_with_tools(
-            _messages(step, ask, docs, spec_so_far), [], max_tokens=MAX_TOKENS))
+            _messages(ask, state, spec_so_far), [], max_tokens=MAX_TOKENS))
         if text.strip():
             return text
-    raise ValueError(f"{step} came back empty")
+    raise ValueError("write came back empty")
 
 
 def generate(run_id: str, ask: str) -> str:
@@ -197,15 +230,14 @@ def generate(run_id: str, ask: str) -> str:
     d = _design_dir(run_id)
     try:
         with run_scope(run_id, build_id):
-            for step in STEPS[:3]:
-                (d / f"{step}.md").write_text(_call(step, ask, _docs(run_id)), encoding="utf-8")
-            spec = ""
+            decided = _decide(ask)
+            (d / DECISIONS).write_text(json.dumps(decided, indent=1, ensure_ascii=False),
+                                       encoding="utf-8")
+            state, spec = tiered_state(decided), ""
             for _ in range(CONTINUATIONS + 1):
-                spec += _call("integrate", ask, _docs(run_id), spec)
+                spec += _write(ask, state, spec)
                 if not missing_sections(spec):
                     break
-        if not spec.strip():
-            raise ValueError("the integrator came back empty")
         (d / "spec.md").write_text(spec, encoding="utf-8")
         games.build_finished(build_id, "succeeded", steps=1)
         return _land_spec(run_id, spec, ask)

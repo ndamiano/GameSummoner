@@ -8,7 +8,7 @@ Everything needed to bring the platform up on one box, and the settings that dec
 ## Bring it up
 
 Four things run: the control plane, the frontend, whatever serves the models, and one worker per
-queue (four queues: `llm`, `image`, `mesh`, `video`). The control plane touches no GPU at all — the
+queue (five queues: `decide`, `llm`, `image`, `mesh`, `video`). The control plane touches no GPU at all — the
 worker-pull queue is the only transport — so a queue with no worker means every job on it times out.
 
 **Backend** — `source venv/bin/activate && python run.py`
@@ -20,13 +20,15 @@ row is created, priced, before the worker runs — the scaler does it for a pod 
 `local_gpu.py` does it for this box at zero — and a claim from a worker id nobody created is
 refused, so a bare `python -m worker.agent` never lands a job. `video` targets the same ComfyUI
 instance as `image` (MiniMax-H3 runs there too) and needs `SAFETY_MODEL_DIR` for the same reason
-`image` does — every frame the sheet is built from gets an NSFW verdict.
+`image` does — every frame the sheet is built from gets an NSFW verdict. `decide` runs the image
+repo's own box (`local/decide/run.sh`, docker image `gamesummoner/decide-local`), which carries its
+engine, contract server and worker in one container.
 
-**One card, four queues, `auto`** — a world build (`compose_world`, or `worldgen.build.build_world`
+**One card, five queues, `auto`** — a world build (`compose_world`, or `worldgen.build.build_world`
 by hand) alternates llm/image/mesh jobs many times and
 blocks until each completes, so there is no point at which the legs can be drained "one at a time
 by hand". `scripts/local_gpu.py auto` runs the control plane's other half instead: it polls all
-four queues, starts (model + worker) whichever has pending work — favoring the queue it already
+five queues, starts (model + worker) whichever has pending work — favoring the queue it already
 holds so a momentary empty doesn't thrash it, except that a queue whose oldest job has waited
 ten minutes takes the card, because the control plane fails a job nobody claims in thirty and a
 build's turns can keep the llm queue non-empty for an hour — and stops what it started on

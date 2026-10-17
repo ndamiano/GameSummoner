@@ -1,0 +1,286 @@
+{
+ "steps": [
+  {
+   "key": "dimension",
+   "kind": "choice",
+   "question": "Should this game be 2d or 3d?",
+   "options": [
+    "2d",
+    "3d"
+   ]
+  },
+  {
+   "key": "camera",
+   "kind": "choice",
+   "question": "Which camera view should this game use?",
+   "options_by": {
+    "key": "dimension",
+    "map": {
+     "2d": [
+      "top-down",
+      "side-on",
+      "isometric"
+     ],
+     "3d": [
+      "first-person",
+      "third-person",
+      "top-down",
+      "isometric"
+     ]
+    }
+   }
+  },
+  {
+   "key": "time model",
+   "kind": "choice",
+   "question": "How does time pass in this game?",
+   "options": [
+    "real-time",
+    "turn-based",
+    "real-time with pause"
+   ]
+  },
+  {
+   "key": "movement model",
+   "kind": "choice",
+   "question": "How does the player move?",
+   "options": [
+    "free movement",
+    "grid-based",
+    "lanes",
+    "on rails",
+    "no movement, cursor only"
+   ]
+  },
+  {
+   "key": "session shape",
+   "kind": "choice",
+   "question": "What is the shape of a play session?",
+   "options": [
+    "single screen",
+    "a sequence of levels",
+    "endless",
+    "open world",
+    "connected rooms"
+   ]
+  },
+  {
+   "key": "failure",
+   "kind": "choice",
+   "question": "What happens when the player fails?",
+   "options": [
+    "restart the level",
+    "lose a life",
+    "return to a checkpoint",
+    "permadeath, start a new run",
+    "no failure"
+   ]
+  },
+  {
+   "key": "tone",
+   "kind": "choice",
+   "question": "What tone should this game have?",
+   "options": [
+    "cozy",
+    "tense",
+    "silly",
+    "epic",
+    "eerie"
+   ]
+  },
+  {
+   "key": "size",
+   "kind": "choice",
+   "question": "How big should this game be?",
+   "options": [
+    "one screen, a few minutes",
+    "a handful of levels, under 30 minutes",
+    "many levels, a few hours"
+   ]
+  },
+  {
+   "key": "win/lose",
+   "kind": "noul",
+   "question": "Should this game end this way? {item}",
+   "items": [
+    "survive as long as possible",
+    "reach the exit",
+    "beat a score",
+    "defeat a final boss",
+    "no ending, play forever"
+   ],
+   "keep_over": 0.6
+  },
+  {
+   "key": "mechanics",
+   "kind": "noul",
+   "question": "Does this mechanic make sense for this game: {item}?",
+   "items": "mechanics.md",
+   "keep_over": 0.6
+  },
+  {
+   "key": "first playable",
+   "kind": "noul",
+   "question": "Must the first playable version of this game have this mechanic: {item}?",
+   "items_from": "mechanics",
+   "record": false
+  },
+  {
+   "key": "art style",
+   "kind": "choice",
+   "question": "Which art style should this game use?",
+   "options": [
+    "pixel art: low-resolution sprites with visible square pixels and a limited palette",
+    "flat vector: clean flat shapes, solid colours, crisp edges",
+    "hand-drawn / painterly: brush strokes, ink lines or watercolour texture",
+    "anime / cel-shaded: bold outlines, flat banded shading",
+    "neon / synthwave: dark background, glowing saturated lines and bloom",
+    "minimalist geometric: abstract primitives, few colours"
+   ],
+   "when": {
+    "dimension": "2d"
+   }
+  },
+  {
+   "key": "art style",
+   "kind": "choice",
+   "question": "Which art style should this game use?",
+   "options": [
+    "low-poly: few large flat-shaded polygons",
+    "voxel: everything built from cubes",
+    "realistic: lifelike materials, lighting and proportions",
+    "stylized / toon: soft shapes, bright colours, cartoon proportions",
+    "neon / synthwave: dark scenes, glowing lines and bloom",
+    "minimalist geometric: abstract primitives, few colours"
+   ],
+   "when": {
+    "dimension": "3d"
+   }
+  },
+  {
+   "key": "palette",
+   "kind": "choice",
+   "question": "Which colour palette should this game use?",
+   "options": [
+    "warm: reds, oranges, yellows",
+    "cold: blues, teals, greys",
+    "dark: mostly black with a few bright accents",
+    "pastel: soft light colours",
+    "saturated: bright, strong colours",
+    "monochrome: one hue in many shades"
+   ]
+  },
+  {
+   "key": "lighting",
+   "kind": "choice",
+   "question": "Which lighting should this game use?",
+   "options": [
+    "daylight: bright, even sun",
+    "night: dark with local light sources",
+    "dusk / golden hour: low warm light, long shadows",
+    "indoor: artificial light, enclosed",
+    "fog / murk: limited view distance"
+   ],
+   "when": {
+    "dimension": "3d"
+   }
+  },
+  {
+   "key": "typography",
+   "kind": "choice",
+   "question": "Which typography should this game's text use?",
+   "options": [
+    "pixel font: blocky bitmap letters",
+    "clean sans: plain modern letters",
+    "serif: book-like letters",
+    "hand-lettered: drawn, irregular letters",
+    "techno / display: angular, futuristic letters"
+   ]
+  },
+  {
+   "key": "music",
+   "kind": "choice",
+   "question": "Which music should this game have?",
+   "options": [
+    "none: no music",
+    "ambient: slow textures, no strong beat",
+    "chiptune: retro console bleeps",
+    "synth loop: electronic loop with a beat",
+    "orchestral: strings, brass, drums",
+    "acoustic: guitar, piano, folk instruments"
+   ]
+  },
+  {
+   "key": "sound effects style",
+   "kind": "choice",
+   "question": "Which style of sound effects should this game have?",
+   "options": [
+    "retro bleeps: synthesized chip sounds",
+    "realistic: recorded-sounding impacts and foley",
+    "cartoony: exaggerated boings and pops",
+    "minimal: soft clicks and tones"
+   ]
+  },
+  {
+   "key": "screens",
+   "kind": "noul",
+   "question": "Should this game have this screen: {item}?",
+   "items": [
+    "title",
+    "pause",
+    "settings",
+    "game over",
+    "win",
+    "level select",
+    "high scores"
+   ],
+   "keep_over": 0.6,
+   "empty": "none"
+  },
+  {
+   "key": "hud",
+   "kind": "noul",
+   "question": "Should this game's HUD show {item}?",
+   "items": [
+    "health",
+    "score",
+    "timer",
+    "minimap",
+    "ammo",
+    "combo counter",
+    "wave number",
+    "currency"
+   ],
+   "keep_over": 0.6,
+   "empty": "none"
+  },
+  {
+   "key": "effects",
+   "kind": "noul",
+   "question": "Should this game use this visual effect: {item}?",
+   "items": [
+    "screen shake",
+    "particles",
+    "hit flash",
+    "slow motion on hit",
+    "trails",
+    "bloom"
+   ],
+   "keep_over": 0.6,
+   "empty": "none"
+  },
+  {
+   "key": "accessibility",
+   "kind": "noul",
+   "question": "Should this game offer this accessibility option: {item}?",
+   "items": [
+    "colour-blind safe palette",
+    "reduced motion",
+    "remappable keys",
+    "difficulty options"
+   ],
+   "keep_over": 0.6,
+   "empty": "none"
+  }
+ ]
+}
