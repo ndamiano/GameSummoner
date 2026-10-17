@@ -191,7 +191,7 @@ One worker process per queue, run wherever the GPU is. It dials out, so it needs
 
 ```bash
 python -m worker.agent --server http://<control-plane>:8000 --token <WORKQUEUE_TOKEN> \
-    --queue llm   --target http://localhost:8090     # ninfer on the local 5090; :8001 on an RTX PRO 6000 pod
+    --queue llm   --target http://localhost:8090     # Basalt on the local 5090; :8001 on an RTX PRO 6000 pod
 python -m worker.agent ... --queue image --target http://localhost:8188   # ComfyUI
 python -m worker.agent ... --queue mesh  --target http://localhost:8189   # TRELLIS
 ```

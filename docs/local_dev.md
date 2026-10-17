@@ -36,9 +36,9 @@ SIGINT/SIGTERM. Handing the card over waits up to `HANDOFF_SECONDS` for the work
 job it holds, because that generation is already paid for and a killed turn re-pays its prefill
 when the job is re-driven. A server already on the port is USED rather than refused — it belongs to
 whoever started it, and auto never stops it — so another ComfyUI on 8188 no longer costs auto the
-queue, or the card it was holding. The engine for an llm leg is the one built for the model
-variant in settings (`ninfer-<variant>` beside `ninfer/`, which `NINFER_DIR` locates, default
-`~/Documents/ninfer`), which `NINFER_BIN` overrides. Run it
+queue, or the card it was holding. The llm leg runs Basalt from `BASALT_DIR` (default
+`~/Documents/basalt`) with the engine flags in `BASALT_CONFIG` (default
+`/var/lib/models/basalt/basalt-iq3s.json`). Run it
 in one terminal alongside `python run.py`; `--idle-exit SECONDS` stops and exits once nothing is
 pending anywhere for that long (default: never). The single-leg (`llm`/`image`/`mesh`/`video`) and
 `all` modes still exist for draining one queue by hand.
@@ -68,42 +68,32 @@ process-parallel, 36 s serial against 9 s here), frontend
 
 ## Model servers
 
-### LLM — ninfer (preferred on a 5090)
+### LLM — Basalt (preferred on a 5090)
 
-Same weights in its own artifact, ~3x llama.cpp's decode rate on the same card (194.5 vs 63.3
-tok/s), compiled for `sm_120a` alone. It serves `chat` only.
+[Basalt](https://github.com/jesdga95/basalt), a Strata fork for Blackwell, serves the prod model,
+Qwen3.8 Flash-Next, on the 5090 as the GSQ-RCO IQ3_S pack (`docs/models.md`): routed experts
+stream through a GPU expert cache, the rest stays resident. Locally it is the closest thing to
+prod's Pennyroyal: the same model at a lower-bit quantization.
 
 ```
-<ninfer>/build/apps/ninfer-serve \
-  <model>.ninfer \
-  --model-id qwen3.8_27b \
+<basalt>/bin/basalt serve \
+  --config /var/lib/models/basalt/basalt-iq3s.json \
+  --alias <llm.model> \
   --host 127.0.0.1 --port 8090 \
-  --max-context 131072 \
-  --spec dflash2 --draft-tokens 7 --lm-head-draft \
-  --presence-penalty 0 \
-  --cors \
-  --vision \
-  --kv-dtype int8 \
-  --preserve-thinking
+  --vision dynamic \
+  --fit-max-tokens
 ```
 
-`--spec dflash2` is the DFlash2 drafter packed in the artifact beside the MTP head: measured 1.27–1.62× MTP3's decode on the design chain, flat at ~200 tok/s where MTP sags as the sequence grows (`docs/experiments.md`). `--spec mtp --draft-tokens 3` still runs from the same file.
-`--vision` is what lets a worldgen build show the model its own renders — the refine stages send
-images, and a server launched without it refuses every image-bearing turn (`vision_disabled`).
-Its fixed GPU allocations come out of the same card as the weights and KV, and they are the
-margin: `scripts/local_gpu.py` serves exactly `<llm.model>.ninfer` from `NINFER_MODELS` because a
-larger variant artifact of the same model left no room for them and died at launch.
-`--presence-penalty 0` is load-bearing: ninfer's sampler defaults to Qwen3 thinking defaults,
-penalty 1.0 among them, which degrades long structured output. There is no `--no-thinking`:
-thinking is `llm.reasoning` (below), sent as `reasoning_effort` on every call, and ninfer has no
-thinking-budget flag — the build's per-turn output cap, `n_ctx − prompt`, is what bounds it,
-because ninfer admits a request only when prompt + max_tokens fits `--max-context`. `--model-id`
-must match `llm.model` in settings.json.
-`--preserve-thinking` is what makes a build's turns hit the cache. The build sends each turn's
-thinking back, so the next request extends the sequence the server already holds and prefills
-only the new tail. Without the flag ninfer renders every assistant turn before the latest user
-message — a nudge, a compaction note — without its thinking, the prefix diverges there, and each
-turn re-prefills the window from that point. The log line's `reuse=append_frontier` is a hit.
+The config holds the engine flags: the `.basalt` file, `spec` 7, int8 KV, `max-context` 262144,
+the expert cache sized to the free VRAM. Flags on the command line win over it. `--alias` must
+match `llm.model` in settings.json: every request names it. `--vision dynamic` borrows
+expert-cache slots while it reads an image, so the worldgen refine stages can show the model its
+renders without a standing vision allocation. The window sits above `n_ctx` (131072), and
+`--fit-max-tokens` trims a request's `max_tokens` rather than refusing it, because Basalt counts a
+build's prompt about 1.5K tokens longer than the harness does and answers 400 to a request that
+overflows (measured 2026-10-15, `labs/basalt-6000`). Prod's Pennyroyal runs 524288 against the
+same budget for the same reason. Thinking is `llm.reasoning` (below), sent as `reasoning_effort`
+on every call.
 
 ### LLM — llama.cpp
 
@@ -239,7 +229,7 @@ restarted — Node caches the ESM config, and a stale one drops every custom cla
 
 ### `llm`
 
-`model`, `n_ctx`, `max_tokens`, `reasoning`, `slots`, `sglang_args`, `ninfer_args`. There is no
+`model`, `n_ctx`, `max_tokens`, `reasoning`, `slots`, `sglang_args`, `basalt_args`. There is no
 endpoint — inference rides the queue.
 
 `slots` is how many jobs one llm worker runs at once against its engine (`worker/agent.py
@@ -254,10 +244,10 @@ of the oldest rounds until a third of the window holds the rest and, only if tha
 drops the oldest whole rounds; every compaction re-grounds the model on the code map and on which
 files it has already read unchanged (`CLAUDE.md`). Nothing else trims.
 
-The two `_args` strings are appended to an engine's launch line, one per engine: `ninfer_args` by
-`scripts/local_gpu.py` for the 27B on the local 5090 (`--kv-dtype int8` is what lets 131072 fit
-it), `sglang_args` by the pod entrypoint for Flash-Next on an RTX PRO 6000 (`docs/deploy.md`).
-Prod and the local box run different models on different cards; the build harness is the same.
+The two `_args` strings are appended to an engine's launch line, one per engine: `basalt_args` by
+`scripts/local_gpu.py` for Flash-Next IQ3_S on the local 5090, `sglang_args` by the pod
+entrypoint for Flash-Next NVFP4 on an RTX PRO 6000 (`docs/deploy.md`). Prod and the local box run
+the same model at different quantizations on different cards; the build harness is the same.
 
 Set it to the server's `-c`. The local router never reports its window, so both errors are yours to
 avoid, and only one of them announces itself:
@@ -281,7 +271,7 @@ wire that forwards it — deploying the wire alone turns prod's thinking off.
 The control plane enqueues a CANONICAL chat request; the worker translates it for whatever its own
 target serves (`worker.agent --api chat|responses`, default `chat`; see `llm_clients/wire.py`).
 `responses` honors `reasoning.effort` as written; `chat` carries it as `reasoning_effort`, which
-ninfer reads and llama.cpp ignores.
+llama.cpp ignores.
 
 On `chat` everything else passes through — so **sampling is a launch flag on the target server,
 not a request field**, and on llama.cpp so is thinking (see the invocations above). Adding an engine is a

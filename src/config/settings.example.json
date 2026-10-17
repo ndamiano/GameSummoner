@@ -6,7 +6,7 @@
     "reasoning": "medium",
     "n_ctx": 32768,
     "sglang_args": "",
-    "ninfer_args": "--preserve-thinking"
+    "basalt_args": ""
   },
   "play": {
     "origin": "",

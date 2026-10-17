@@ -70,11 +70,20 @@ def test_held_queue_drained_and_nothing_else_pending_releases_the_card():
     assert local_gpu.choose_action("llm", pending, idle_ticks, 3) is None
 
 
-def test_llm_leg_serves_vision(monkeypatch):
-    monkeypatch.setattr(local_gpu, "_model_id", lambda: "m")
-    monkeypatch.setattr(local_gpu, "_ninfer_artifact", lambda: Path("/m.ninfer"))
-    monkeypatch.setattr(local_gpu, "_settings", lambda: {"llm": {"n_ctx": 4096}})
-    assert "--vision" in local_gpu._leg("llm")["argv"]
+def test_llm_leg_serves_the_settings_model_on_basalt_with_vision_and_its_flags(monkeypatch, tmp_path):
+    config = tmp_path / "basalt.json"
+    config.write_text("{}")
+    monkeypatch.setattr(local_gpu, "BASALT_CONFIG", config)
+    monkeypatch.setattr(local_gpu, "_settings",
+                        lambda: {"llm": {"model": "fn-basalt", "basalt_args": "--parallel 2"}})
+    argv = local_gpu._leg("llm")["argv"]
+    assert argv[1:3] == ["serve", "--config"] and argv[3] == str(config)
+    assert argv[argv.index("--alias") + 1] == "fn-basalt"
+    assert argv[argv.index("--vision") + 1] == "dynamic"
+    assert argv[-2:] == ["--parallel", "2"]
+    config.unlink()
+    with __import__("pytest").raises(SystemExit):
+        local_gpu._leg("llm")
 
 
 def test_mesh_leg_ready_waits_for_warm(monkeypatch):
@@ -95,39 +104,6 @@ def test_mesh_leg_ready_waits_for_warm(monkeypatch):
     )
     assert local_gpu._ready("mesh", "http://x/health") is False
     assert local_gpu._ready("mesh", "http://x/health") is True
-
-
-def test_ninfer_artifact_is_the_nvfp4_build_of_the_model_id(monkeypatch, tmp_path):
-    """The groupwise-int sibling is the wrong artifact, not a fallback: worldgen's judges read
-    renders through the vision tower, and nvfp4/fp8 is the one they were measured on."""
-    monkeypatch.setattr(local_gpu, "_model_id", lambda: "qwen3.8_27b")
-    monkeypatch.setattr(local_gpu, "NINFER_MODELS", tmp_path)
-    (tmp_path / "qwen3_8_27b.ninfer").write_bytes(b"x")
-    with __import__("pytest").raises(SystemExit):
-        local_gpu._ninfer_artifact()
-    (tmp_path / "qwen3_8_27b_nvfp4.ninfer").write_bytes(b"x")
-    assert local_gpu._ninfer_artifact() == tmp_path / "qwen3_8_27b_nvfp4.ninfer"
-
-
-def test_the_engine_is_the_one_built_for_the_model_variant(monkeypatch, tmp_path):
-    """A quasar artifact under the plain build dies at launch with `tensor descriptor does not
-    match target contract`, and auto then has no card to hand anyone."""
-    monkeypatch.delenv("NINFER_BIN", raising=False)
-    default = tmp_path / "ninfer" / "build" / "apps" / "ninfer-serve"
-    quasar = tmp_path / "ninfer-quasar" / "build" / "apps" / "ninfer-serve"
-    quasar.parent.mkdir(parents=True)
-    quasar.write_text("")
-    monkeypatch.setattr(local_gpu, "NINFER_DEFAULT", default)
-    monkeypatch.setattr(local_gpu, "_model_id", lambda: "qwen3.8_27b_quasar")
-    assert local_gpu._ninfer_bin() == quasar
-    monkeypatch.setattr(local_gpu, "_model_id", lambda: "qwen3.8_27b")
-    assert local_gpu._ninfer_bin() == default          # no engine of its own: the plain one
-
-
-def test_ninfer_bin_env_wins(monkeypatch, tmp_path):
-    monkeypatch.setenv("NINFER_BIN", str(tmp_path / "mine"))
-    monkeypatch.setattr(local_gpu, "_model_id", lambda: "qwen3.8_27b_quasar")
-    assert local_gpu._ninfer_bin() == tmp_path / "mine"
 
 
 def test_a_handed_over_worker_is_given_time_to_finish_its_job(monkeypatch):

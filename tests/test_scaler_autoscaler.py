@@ -38,7 +38,7 @@ def test_an_llm_machine_boots_with_the_model_window_flags_and_slots_and_no_card_
     """The machine cannot read settings, and the card is the worker's to report"""
     p = _provider("runpod", [1.89])
     a = _scaler(p)
-    _start(a, llm={**LLM, "sglang_args": "--cuda-graph-bs 1", "ninfer_args": "--kv-dtype int8",
+    _start(a, llm={**LLM, "sglang_args": "--cuda-graph-bs 1", "basalt_args": "--parallel 2",
                    "slots": 2})
     assert p.launch.call_args.args[2] == {
         "CP_URL": "https://cp", "WORKER_TOKEN": "wtoken", "WORKER_QUEUE": "llm",

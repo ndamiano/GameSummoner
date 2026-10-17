@@ -12,7 +12,7 @@ the ones we reject, because "why we didn't switch" is the expensive thing to rel
 
 | Job | Model | Served by | Defined in |
 |---|---|---|---|
-| Build turns (the LLM) | Qwen3.8 27B, NVFP4 | ninfer on a 5090; llama.cpp elsewhere | `llm.model` in settings.json |
+| Build turns (the LLM) | Qwen3.8 Flash-Next: NVFP4 in prod, IQ3_S on a 5090 | Pennyroyal SGLang on an RTX PRO 6000; Basalt on a 5090 | `llm.model` in settings.json |
 | Tiles | DreamShaperXL Turbo v2.1 → min-cut quilting | ComfyUI + `tools/quilting.py` | `workflows/txt2img_tile.json` |
 | Sprites, scenes, anim stills, mesh subjects, scene-chain subjects | Qwen-Image 2512 | ComfyUI | `workflows/txt2img_subject.json` |
 | Anim sheets (image-to-video loops) | MiniMax-H3 | ComfyUI, the `video` queue | `workflows/i2v_loop.json` + `worker/anim_sheet.py` |
@@ -32,9 +32,9 @@ whole category we do not produce at all, and it is wanted.
       https://huggingface.co/owensong/Inflect-Micro-v2
 - [ ] TensorSharp. It claims that it gets a speed boost on prefill and TTFT, though slightly lower decode vs llama.cpp
       on CUDA. Worth investigating either way.
-      NOTE: the published comparison is against llama.cpp, which is not our 5090 baseline — ninfer
-      is, at ~3x llama.cpp. Prefill/TTFT is still the right thing to watch: a build's input IS its
-      transcript, so prefill is most of a turn.
+      NOTE: the published comparison is against llama.cpp, which is not our 5090 baseline — Basalt
+      is. Prefill/TTFT is still the right thing to watch: a build's input IS its transcript, so
+      prefill is most of a turn.
       https://www.reddit.com/r/LocalLLaMA/comments/1v6ect8/benchmarks_tensorsharp_vs_llamacpp/
       https://github.com/zhongkaifu/TensorSharp
 - [ ] Vibe voice from microsoft for voiceovers
@@ -80,6 +80,8 @@ whole category we do not produce at all, and it is wanted.
 
 ## Previously investigated
 
+- **Inference shell on the 5090: ninfer → Basalt** (adopted 2026-10-16). Basalt serves the prod
+  model, Flash-Next, as an IQ3_S pack on the same card, where ninfer served the 27B stand-in.
 - **Inference shell: llama.cpp → ninfer** (adopted 2026-08-01). ~3x: 194.5 vs 63.3 tok/s on the
   same weights on a 5090. ninfer serves Qwen only, on 5090s only, and speaks `chat` only, so llama.cpp
   stays the fallback everywhere else. Thinking and sampling are launch flags on both — see

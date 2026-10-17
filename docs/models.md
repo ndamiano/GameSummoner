@@ -216,19 +216,19 @@ litigation against the model.
 
 ## Local testing
 
-### Qwen3.8 27B
+### Qwen3.8 Flash-Next (IQ3_S)
 
-- Weights: [Qwen/Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B), served as the
-  QUASAR-QAT NVFP4 ninfer artifact from
-  [MirkoCovizzi/Qwen3.8-27B-QUASAR-NVFP4-NInfer](https://huggingface.co/MirkoCovizzi/Qwen3.8-27B-QUASAR-NVFP4-NInfer)
-  (sha256 `da5efb33…`), which packs the DFlash2 drafter from
-  [incoai/Qwen3.8-27B-DFlash2](https://huggingface.co/incoai/Qwen3.8-27B-DFlash2) (via the
-  pinned z-lab mirror, revision `50307d4c`)
-- License: [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) for the base, the QUASAR
-  quantization, the drafter and the artifact
+- Weights: the GSQ-RCO IQ3_S quantization of
+  [Qwen/Qwen3.8-Flash-Next](https://huggingface.co/Qwen/Qwen3.8-Flash-Next) from
+  [ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF](https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF),
+  served as the `.basalt` pack from
+  [jesdga/Qwen3.8-Flash-Next-Basalt](https://huggingface.co/jesdga/Qwen3.8-Flash-Next-Basalt)
+- License: [Qwen Community License 1.0](https://huggingface.co/Qwen/Qwen3.8-Flash-Next/blob/main/LICENSE)
+  for the base, Apache 2.0 for the quantization
 
-27.8B dense model that stands in for Flash-Next on the 5090 (`settings.json` names it
-`qwen3.8_27b_quasar`, served by ninfer on :8090 at a 131072 int8-KV window). Never in production.
+The prod model at a lower-bit quantization, so it fits a 5090: 81.0 GiB on disk, 89.4% the same
+top-1 token as Q8_0 on Basalt's wikitext-2 bench. `settings.json` names it by the alias Basalt
+serves it under, on :8090 (`docs/local_dev.md`). Never in production.
 Everything else in this file runs locally through the same code path as prod (`docs/local_dev.md`).
 
 ## License obligations

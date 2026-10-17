@@ -22,8 +22,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 LOGS = Path(os.environ.get("MAESTRO_LOCAL_LOGS", "/tmp/maestro-local"))
 
-NINFER_DEFAULT = Path(os.environ.get("NINFER_DIR", str(Path.home() / "Documents/ninfer"))) / "build/apps/ninfer-serve"
-NINFER_MODELS = Path(os.environ.get("NINFER_MODELS", "/var/lib/models/ninfer"))
+BASALT_BIN = Path(os.environ.get("BASALT_DIR", str(Path.home() / "Documents/basalt"))) / "bin/basalt"
+BASALT_CONFIG = Path(os.environ.get("BASALT_CONFIG", "/var/lib/models/basalt/basalt-iq3s.json"))
 COMFY_PYTHON = Path(os.environ.get("COMFY_PYTHON",
                                    str(Path.home() / "Documents/Comfy/comfy-env/bin/python")))
 COMFY_DIR = Path(os.environ.get("COMFY_DIR", str(Path.home() / "comfy/mess-with-comfy")))
@@ -68,23 +68,13 @@ def _settings() -> dict:
 
 
 def _model_id() -> str:
-    return (_settings().get("llm") or {}).get("model") or "qwen3.8_27b"
+    return (_settings().get("llm") or {}).get("model") or "qwen3.8-flash-next-basalt"
 
 
-def _ninfer_bin() -> Path:
-    """The engine built for the model variant the settings ask for; NINFER_BIN overrides."""
-    if os.environ.get("NINFER_BIN"):
-        return Path(os.environ["NINFER_BIN"])
-    variant = _model_id().rsplit("_", 1)[-1]
-    sibling = NINFER_DEFAULT.parents[2].with_name(f"ninfer-{variant}") / "build/apps/ninfer-serve"
-    return sibling if sibling.exists() else NINFER_DEFAULT
-
-
-def _ninfer_artifact() -> Path:
-    path = NINFER_MODELS / f"{_model_id().replace('.', '_')}_nvfp4.ninfer"
-    if path.exists():
-        return path
-    raise SystemExit(f"no ninfer artifact for model id {_model_id()!r} at {path}")
+def _basalt_config() -> Path:
+    if BASALT_CONFIG.exists():
+        return BASALT_CONFIG
+    raise SystemExit(f"no basalt config at {BASALT_CONFIG}")
 
 
 def _leg(queue: str) -> dict:
@@ -101,14 +91,10 @@ def _leg(queue: str) -> dict:
         return {
             "port": 8090,
             "ready": "http://127.0.0.1:8090/v1/models",
-            "argv": [str(_ninfer_bin()), str(_ninfer_artifact()), "--model-id", _model_id(),
-                     "--host", "127.0.0.1", "--port", "8090",
-                     "--max-context", str((_settings().get("llm") or {}).get("n_ctx", 98304)),
-                     "--spec", "dflash2", "--draft-tokens", "7", "--lm-head-draft",
-                     "--presence-penalty", "0", "--cors", "--vision",
-                     # The same llm.ninfer_args a pod gets at create, so a flag that dies at
-                     # launch dies here first.
-                     *shlex.split((_settings().get("llm") or {}).get("ninfer_args") or "")],
+            "argv": [str(BASALT_BIN), "serve", "--config", str(_basalt_config()),
+                     "--alias", _model_id(), "--host", "127.0.0.1", "--port", "8090",
+                     "--vision", "dynamic", "--fit-max-tokens",
+                     *shlex.split((_settings().get("llm") or {}).get("basalt_args") or "")],
             "cwd": None,
             "env": {},
         }
@@ -151,7 +137,7 @@ def _up(url: str, timeout: float = 2.0) -> bool:
 
 
 def _ready(queue: str, url: str, timeout: float = 2.0) -> bool:
-    """Readiness is server-specific: ninfer must list the configured model id, not just listen."""
+    """Readiness is server-specific: basalt must list the configured model id, not just listen."""
     import urllib.error
     import urllib.request
     try:

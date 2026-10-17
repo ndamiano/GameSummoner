@@ -45,11 +45,8 @@ class SettingsManager:
                 # build without thinking makes "something kinda close" (docs/experiments.md).
                 "reasoning": os.getenv("LLM_REASONING", "medium"),
                 "max_tokens": 50000,
-                # Engine launch flags, so a tuning knob is a settings edit and never a new
-                # worker image: sglang_args reaches an llm pod at create, ninfer_args the local
-                # leg at start (the two boxes run different engines on different cards).
                 "sglang_args": os.getenv("SGLANG_ARGS", ""),
-                "ninfer_args": os.getenv("NINFER_ARGS", ""),
+                "basalt_args": os.getenv("BASALT_ARGS", ""),
                 # Jobs one llm worker runs at once; the pod's engine batches them. The scaler
                 # counts workers, not slots, so depth_per_worker and max age scale with it.
                 "slots": int(os.getenv("LLM_SLOTS", "1")),

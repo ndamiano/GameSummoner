@@ -53,7 +53,7 @@ python scripts/local_gpu.py auto
 The workers and model servers it starts are not in this repository. They live in two sibling
 repos, [`gamesummoner-workers`](https://github.com/ndamiano/gamesummoner-workers) (the pull-side worker agent) and [`gamesummoner-images`](https://github.com/ndamiano/gamesummoner-images) (the image,
 mesh and sprite engines), which `local_gpu.py` finds via `WORKER_REPO_DIR` and `IMAGES_REPO_DIR`.
-The llm leg serves through [ninfer](https://github.com/Neroued/ninfer) (`NINFER_DIR`). Without
+The llm leg serves through [Basalt](https://github.com/jesdga95/basalt) (`BASALT_DIR`). Without
 them the control plane, frontend and tests all run, but no build gets past its first queued job.
 
 ## First build
