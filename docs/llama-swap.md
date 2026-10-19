@@ -8,8 +8,7 @@ on one RTX 5090 with Qwen3.8 Flash-Next; anything else runs, with no promise abo
 makes. [gamesummoner.com](https://gamesummoner.com) runs the full-size models.
 
 ```bash
-./install.sh
-GameSummoner
+git clone https://github.com/ndamiano/GameSummoner.git && cd GameSummoner && ./install.sh && GameSummoner
 ```
 
 `install.sh` looks for llama-swap at its default address, `http://localhost:8080`; set
@@ -19,7 +18,10 @@ on this machine; type a request on its top row to summon one. The README covers 
 ## What llama-swap must serve
 
 Three entries, all required, each reached through llama-swap the same way a client reaches any
-model. `install.sh` checks each one and stops on anything missing.
+model. Any entry names work: `install.sh` lists the models llama-swap serves, asks which is the
+LLM and which the decision model, asks for the ComfyUI entry (unlisted is fine) and checks that it
+has every node and model file in `src/config/workflows/`. It then lists what it will install and
+waits for a yes, and saves the choices in `settings.json`. Rerun it to change them.
 
 | Entry (default name) | Serves | Reached at |
 |---|---|---|
@@ -27,7 +29,8 @@ model. `install.sh` checks each one and stops on anything missing.
 | `gamesummoner-decide` | vLLM serving JEV-27B-VL's decision LoRA as `jev-decision` | `/v1/completions`, by model name |
 | `gamesummoner-comfy` | ComfyUI v0.39.2 with ComfyUI-RMBG and the weights in `docs/models.md` | `/upstream/gamesummoner-comfy/` |
 
-Other names work: set `GS_LLM_MODEL`, `GS_DECIDE_MODEL` and `GS_COMFY_MODEL` for `install.sh`.
+Without a terminal, `install.sh` asks nothing: set `GS_LLM_MODEL`, `GS_DECIDE_MODEL` and
+`GS_COMFY_MODEL`, or it uses the names already in `settings.json`, then the suggested ones.
 
 ## JEV-27B-VL
 

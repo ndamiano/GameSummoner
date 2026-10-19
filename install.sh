@@ -6,27 +6,29 @@ home=${GAMESUMMONER_HOME:-$HOME/.gamesummoner}
 images=${IMAGES_REPO_DIR:-$home/images}
 workers=${WORKER_REPO_DIR:-$home/workers}
 swap=${LLAMA_SWAP_URL:-http://localhost:8080}
-llm=${GS_LLM_MODEL:-gamesummoner-llm}
-decide=${GS_DECIDE_MODEL:-gamesummoner-decide}
-comfy=${GS_COMFY_MODEL:-gamesummoner-comfy}
+settings="$root/src/config/settings.json"
 missing=0
 
 need() { echo "missing: $1" >&2; missing=1; }
 command -v python3.12 >/dev/null 2>&1 || need "Python 3.12"
 command -v node >/dev/null 2>&1 || need "Node 20"
 command -v git >/dev/null 2>&1 || need "git"
+[ "$missing" = 0 ] || { echo "install stopped: everything above is required" >&2; exit 1; }
 
-models=$(curl -fsS -m 5 "$swap/v1/models" 2>/dev/null || true)
-[ -n "$models" ] || need "llama-swap at $swap (set LLAMA_SWAP_URL)"
-if [ -n "$models" ]; then
-    for m in "$llm" "$decide"; do
-        grep -q "\"$m\"" <<<"$models" || need "model '$m' in llama-swap (set GS_LLM_MODEL / GS_DECIDE_MODEL)"
-    done
-    echo "checking ComfyUI through llama-swap ('$comfy'); the first start can take a minute"
-    curl -fsS -m 300 -o /dev/null "$swap/upstream/$comfy/system_stats" \
-        || need "ComfyUI as model '$comfy' in llama-swap (set GS_COMFY_MODEL)"
-fi
-[ "$missing" = 0 ] || { echo "install stopped: everything above is required (docs/llama-swap.md)" >&2; exit 1; }
+plan=()
+[ -d "$images" ] || plan+=("gamesummoner-images, cloned to $images")
+[ -d "$workers" ] || plan+=("gamesummoner-workers, cloned to $workers")
+plan+=("Python packages in $root/venv" "Playwright's Chromium, for play-testing games"
+       "Node packages in $root/runtime/node_modules" "GPU worker packages in $home/venv-gpu"
+       "your model choices in $settings" "the GameSummoner command in $HOME/.local/bin")
+rc=0
+picked=$(python3.12 "$root/scripts/install_models.py" "$swap" "${plan[@]}") || rc=$?
+case $rc in
+    0) ;;
+    3 | 130) echo "nothing installed" >&2; exit 1 ;;
+    *) echo "install stopped: everything above is required (docs/llama-swap.md)" >&2; exit 1 ;;
+esac
+{ read -r llm; read -r decide; read -r comfy; } <<<"$picked"
 
 [ -d "$images" ] || git clone -q https://github.com/ndamiano/gamesummoner-images "$images"
 [ -d "$workers" ] || git clone -q https://github.com/ndamiano/gamesummoner-workers "$workers"
@@ -38,7 +40,6 @@ fi
 [ -d "$home/venv-gpu" ] || python3.12 -m venv "$home/venv-gpu"
 "$home/venv-gpu/bin/pip" install -q -r "$images/local/requirements.txt"
 
-settings="$root/src/config/settings.json"
 fresh=0
 [ -f "$settings" ] || { cp "$root/src/config/settings.example.json" "$settings"; fresh=1; }
 "$root/venv/bin/python" - "$settings" "$swap" "$llm" "$decide" "$comfy" "$fresh" "$home/runs" <<'PY'

@@ -8,14 +8,14 @@ handle on why we made the choices we've made.
 ## One command
 
 ```bash
-./install.sh
-GameSummoner
+git clone https://github.com/ndamiano/GameSummoner.git && cd GameSummoner && ./install.sh && GameSummoner
 ```
 
 Locally, GameSummoner expects [llama-swap](https://github.com/mostlygeek/llama-swap) serving three
 models: a tool-calling LLM, the JEV-27B-VL decision model, and ComfyUI. `docs/llama-swap.md` lists
-exactly what each must be, with an example config. `install.sh` checks every requirement and
-stops on anything missing (Python 3.12, Node 20, git, and the three models), then installs.
+exactly what each must be, with an example config. `install.sh` checks for Python 3.12, Node 20
+and git, lists llama-swap's models and asks which one plays each part, checks that ComfyUI has every
+node and model file the workflows use, then installs.
 
 `GameSummoner` starts the control plane and the queue workers and opens a terminal view of every
 game built on this machine: each one's design, build and play-test progress, the queues, and a play
