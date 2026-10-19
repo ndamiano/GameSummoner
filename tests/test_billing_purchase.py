@@ -44,8 +44,8 @@ def _purchase_ledger_rows(user_id):
         ).fetchall()
 
 
-def test_storefront_routes_reject_anonymous(app_client):
-    assert app_client.get("/api/billing/packages").status_code == 401
+def test_the_price_list_is_public_and_buying_is_not(app_client):
+    assert app_client.get("/api/billing/packages").status_code == 200
     assert app_client.post("/api/billing/purchase", json={"package_id": "one-credit"}).status_code == 401
     assert app_client.get("/api/billing/purchases").status_code == 401
 

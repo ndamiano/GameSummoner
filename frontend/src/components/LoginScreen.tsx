@@ -1,7 +1,8 @@
 import React, { useState } from 'react'
 import { api, ApiError } from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
-import { Link } from '../router'
+import { Link, useRouter } from '../router'
+import { readDraft } from '../api/draft'
 import { Button } from './ui/Button'
 import { TextInput } from './ui/Field'
 import Footer from './public/Footer'
@@ -93,9 +94,11 @@ const ForgotPassword: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     )
 }
 
-const LoginScreen: React.FC = () => {
+const LoginScreen: React.FC<{ initialMode?: 'login' | 'signup' }> = ({ initialMode = 'login' }) => {
     const { login, signup } = useAuth()
-    const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login')
+    const { navigate } = useRouter()
+    const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>(initialMode)
+    const idea = readDraft()
     const [handle, setHandle] = useState('')
     const [password, setPassword] = useState('')
     const [email, setEmail] = useState('')
@@ -109,6 +112,7 @@ const LoginScreen: React.FC = () => {
         try {
             if (mode === 'login') await login(handle, password)
             else await signup(handle, password, email)
+            navigate(mode === 'signup' || idea ? '/new' : '/', { replace: true })
         } catch (err) {
             if (err instanceof ApiError && err.status === 429) {
                 setError('Too many attempts — wait a few minutes and try again.')
@@ -136,6 +140,14 @@ const LoginScreen: React.FC = () => {
     return (
         <Frame>
             <form onSubmit={submit} className="flex flex-col gap-4">
+                {idea && (
+                    <div className="text-center flex flex-col gap-1.5">
+                        <p className="text-sm text-bone">
+                            {mode === 'signup' ? 'Create an account to summon your game' : 'Sign in to summon your game'}
+                        </p>
+                        <p className="text-xs text-slate italic line-clamp-2">“{idea}”</p>
+                    </div>
+                )}
                 <TextInput type="text" value={handle} onChange={e => setHandle(e.target.value)}
                     placeholder="Handle" autoFocus autoComplete="username" />
                 {mode === 'signup' && (

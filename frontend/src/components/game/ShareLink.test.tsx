@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { ShareLink } from './ShareLink'
 import SharedGame from '../public/SharedGame'
 import { RouterProvider } from '../../router'
+import { AuthProvider } from '../../contexts/AuthContext'
 import { api } from '../../api/client'
 
 afterEach(() => {
@@ -32,7 +33,7 @@ describe('sharing a game', () => {
     it('a shared link plays with no account, and a dead one says so', async () => {
         vi.spyOn(api, 'getShare').mockResolvedValue({ share_id: 'abc123def456', title: 'Fox Run', thumb_url: null })
         const session = vi.spyOn(api, 'sharePlaySession').mockResolvedValue({ url: 'https://play.test/handoff?t=x', origin: '' })
-        render(<RouterProvider><SharedGame shareId="abc123def456" /></RouterProvider>)
+        render(<AuthProvider><RouterProvider><SharedGame shareId="abc123def456" /></RouterProvider></AuthProvider>)
 
         await waitFor(() => screen.getByRole('heading', { name: 'Fox Run' }))
         fireEvent.click(screen.getByRole('button', { name: '▶ Play' }))
@@ -42,7 +43,7 @@ describe('sharing a game', () => {
 
         cleanup()
         vi.spyOn(api, 'getShare').mockRejectedValue(new Error('404'))
-        render(<RouterProvider><SharedGame shareId="gone" /></RouterProvider>)
+        render(<AuthProvider><RouterProvider><SharedGame shareId="gone" /></RouterProvider></AuthProvider>)
         await waitFor(() => screen.getByText('This game isn’t shared anymore.'))
     })
 })

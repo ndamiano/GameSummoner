@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react'
 import DemoGallery from './DemoGallery'
 import Footer from './Footer'
+import { SummonBox } from './SummonBox'
 import { Link } from '../../router'
 import { trackLanding } from '../../api/track'
 
@@ -28,6 +29,10 @@ const Landing: React.FC = () => {
                         The game you imagine — a sentence, a paragraph, however you'd say it to a
                         friend — becomes a real, playable browser game. Art and all.
                     </p>
+                </section>
+
+                <section className="flex justify-center">
+                    <SummonBox heading="What should exist?" />
                 </section>
 
                 <DemoGallery />

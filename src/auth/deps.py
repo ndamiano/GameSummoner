@@ -21,7 +21,7 @@ from auth.store import User, resolve_token
 # single-use play token — see auth/playgrants.py). The API docs exist only in dev (see
 # api/app.py), so they're public only there.
 PUBLIC_PATHS = {"/", "/auth/login", "/auth/signup", "/auth/forgot", "/auth/reset",
-                "/api/billing/webhook", "/api/events/landing", "/handoff"}
+                "/api/billing/webhook", "/api/billing/packages", "/api/events/landing", "/handoff"}
 # The landing page's demo surface: list + per-game session mint, both read-only and limited
 # server-side to the owner-curated `demo_games` list (routers/demos.py).
 PUBLIC_PREFIXES = ("/api/demos", "/api/shares")

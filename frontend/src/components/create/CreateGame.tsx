@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react'
-import { api, buildErrorMessage } from '../../api/client'
+import { api, ApiError, buildErrorMessage } from '../../api/client'
+import { clearDraft, readDraft, saveDraft } from '../../api/draft'
+import { Link } from '../../router'
 import { track } from '../../api/track'
 import { useAuth } from '../../contexts/AuthContext'
 import { Button } from '../ui/Button'
@@ -18,20 +20,25 @@ const shorten = (s: string, n = 46) => (s.length <= n ? s : `${s.slice(0, n).tri
 export const CreateGame: React.FC<{ onCreated: (runId: string) => void; onCancel: () => void }> = ({
     onCreated, onCancel,
 }) => {
-    const [text, setText] = useState('')
+    const [text, setText] = useState(readDraft)
     const [busy, setBusy] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const [broke, setBroke] = useState(false)
+
+    const edit = (next: string) => { setText(next); saveDraft(next) }
     const { refreshBalance } = useAuth()
 
     useEffect(() => { track('create_opened') }, [])
 
     const create = async () => {
-        setBusy(true); setError(null)
+        setBusy(true); setError(null); setBroke(false)
         try {
             const { run_id } = await api.createGame(text)
+            clearDraft()
             onCreated(run_id)
         } catch (e) {
-            setError(buildErrorMessage(e, 'Could not start the design'))
+            if (e instanceof ApiError && e.status === 402) setBroke(true)
+            else setError(buildErrorMessage(e, 'Could not start the design'))
         } finally { setBusy(false); refreshBalance() }
     }
 
@@ -50,7 +57,7 @@ export const CreateGame: React.FC<{ onCreated: (runId: string) => void; onCancel
                     </p>
                 </div>
 
-                <TextArea value={text} onChange={e => setText(e.target.value)} disabled={busy}
+                <TextArea value={text} onChange={e => edit(e.target.value)} disabled={busy}
                     rows={5} autoFocus spellCheck={false}
                     placeholder="A snail racing game where the race runs over four in-game days."
                     className="border-l-2 border-l-ember" />
@@ -65,12 +72,21 @@ export const CreateGame: React.FC<{ onCreated: (runId: string) => void; onCancel
                 </div>
 
                 {error && <p className="text-fail text-sm">{error}</p>}
+                {broke && (
+                    <div className="bg-panel border border-edge rounded-md p-4 flex items-center justify-between gap-3 flex-wrap">
+                        <p className="text-sm text-bone">You need a credit to summon this. Your idea is kept while you get one.</p>
+                        <Link to="/credits"
+                            className="rounded bg-ember text-ember-ink hover:bg-ember/90 font-bold text-sm px-4 py-2 transition-colors">
+                            Get credits →
+                        </Link>
+                    </div>
+                )}
 
                 <div className="flex flex-col gap-2 mt-2">
                     <span className="text-xs text-dim">Or start from one of these</span>
                     <div className="flex flex-wrap gap-2">
                         {EXAMPLES.map(e => (
-                            <button key={e} onClick={() => setText(e)} disabled={busy}
+                            <button key={e} onClick={() => edit(e)} disabled={busy}
                                 className="text-sm text-slate border border-edge rounded-full px-3 py-1
                                            hover:text-bone hover:border-ember/50 transition-colors disabled:opacity-40">
                                 {shorten(e)}

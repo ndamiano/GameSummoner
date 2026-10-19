@@ -11,7 +11,9 @@ import { RouterProvider, useRouter } from './router'
 // in or create an account. Signed in, every path belongs to the app.
 const PublicSite = () => {
     const { path } = useRouter()
-    return path === '/login' ? <LoginScreen /> : <Landing />
+    if (path === '/login') return <LoginScreen />
+    if (path === '/signup') return <LoginScreen initialMode="signup" />
+    return <Landing />
 }
 
 // /reset sits above the auth gate: the link is followed from an email, where a session is exactly

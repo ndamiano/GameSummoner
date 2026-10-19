@@ -3,12 +3,15 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import Landing from './Landing'
 import { RouterProvider } from '../../router'
 import { api } from '../../api/client'
+import { AuthProvider } from '../../contexts/AuthContext'
 
 const renderLanding = () =>
     render(
-        <RouterProvider>
-            <Landing />
-        </RouterProvider>,
+        <AuthProvider>
+            <RouterProvider>
+                <Landing />
+            </RouterProvider>
+        </AuthProvider>,
     )
 
 afterEach(() => {

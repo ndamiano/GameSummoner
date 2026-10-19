@@ -6,6 +6,8 @@ import type { SharedGame as Share } from '../../types'
 import { Button } from '../ui/Button'
 import { Sigil } from '../ui/Sigil'
 import Footer from './Footer'
+import { SummonBox } from './SummonBox'
+import { useAuth } from '../../contexts/AuthContext'
 
 const SharedGame: React.FC<{ shareId: string }> = ({ shareId }) => {
     const [share, setShare] = useState<Share | null>(null)
@@ -13,6 +15,7 @@ const SharedGame: React.FC<{ shareId: string }> = ({ shareId }) => {
     const [session, setSession] = useState<string | null>(null)
     const [busy, setBusy] = useState(false)
     const stageRef = useRef<HTMLDivElement>(null)
+    const { token } = useAuth()
 
     useEffect(() => { trackShareView(shareId) }, [shareId])
 
@@ -37,7 +40,7 @@ const SharedGame: React.FC<{ shareId: string }> = ({ shareId }) => {
                                      after:absolute after:inset-[3px] after:bg-ember after:opacity-50" />
                     GameSummoner
                 </Link>
-                <Link to="/login" className="text-sm text-slate hover:text-bone transition-colors">
+                <Link to={token ? '/new' : '/signup'} className="text-sm text-slate hover:text-bone transition-colors">
                     Make your own
                 </Link>
             </header>
@@ -69,15 +72,12 @@ const SharedGame: React.FC<{ shareId: string }> = ({ shareId }) => {
                         </div>
                     </>
                 )}
-                <section className="text-center flex flex-col items-center gap-3 pt-6">
+                <section className="text-center flex flex-col items-center gap-4 pt-6">
                     <p className="text-slate max-w-xl">
                         Made with GameSummoner: describe a game in a sentence and it becomes a real,
                         playable browser game.
                     </p>
-                    <Link to="/"
-                        className="rounded bg-ember text-ember-ink hover:bg-ember/90 font-bold text-sm px-4 py-2 transition-colors">
-                        Make your own →
-                    </Link>
+                    <SummonBox heading="What would you summon?" />
                 </section>
             </main>
 

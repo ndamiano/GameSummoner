@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { track } from '../../api/track'
 import { api, type CreditPackage, type PurchaseRow } from '../../api/client'
 import { useAuth } from '../../contexts/AuthContext'
+import { readDraft } from '../../api/draft'
+import { Link } from '../../router'
 import { Button } from '../ui/Button'
 import { SectionLabel } from '../ui/Field'
 import { Pill } from '../ui/Pill'
@@ -20,6 +22,7 @@ const CreditsPage: React.FC = () => {
     const [history, setHistory] = useState<PurchaseRow[]>([])
     const [buying, setBuying] = useState<string | null>(null)
     const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null)
+    const idea = readDraft()
 
     useEffect(() => {
         api.listPackages().then(r => setPackages(r.packages)).catch(() => {})
@@ -70,6 +73,19 @@ const CreditsPage: React.FC = () => {
                         {balance ?? '—'} <span className="text-slate">credits</span>
                     </span>
                 </div>
+
+                {idea && (
+                    <div className="bg-panel border border-edge rounded-md p-4 flex items-center justify-between gap-3 flex-wrap">
+                        <p className="text-sm text-slate min-w-0">
+                            Your idea is waiting: <span className="italic text-bone">“{idea.length > 80 ? `${idea.slice(0, 80)}…` : idea}”</span>
+                        </p>
+                        <Link to="/new"
+                            className={`rounded font-bold text-sm px-4 py-2 transition-colors ${(balance ?? 0) > 0
+                                ? 'bg-ember text-ember-ink hover:bg-ember/90' : 'border border-edge text-slate hover:text-bone'}`}>
+                            Back to it →
+                        </Link>
+                    </div>
+                )}
 
                 <section className="flex flex-col gap-3">
                     <SectionLabel>Buy credits</SectionLabel>
