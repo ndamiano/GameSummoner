@@ -20,3 +20,11 @@ last step, empties the llm queue past that window, and the next turn pays a ~40 
 Holding the card until another queue has work or `--idle-exit` fires removes it.
 
 Worth it when local builds hit it more than the twice in 77 steps measured on 2026-10-18.
+
+## Referral credits
+
+A person shares a referral link; when someone signs up through it, both get double credits on the
+new person's next purchase. It turns existing users into the acquisition channel without giving
+away free builds, since the bonus only lands on money actually spent.
+
+Worth it once there are paying customers to do the referring.
