@@ -28,6 +28,7 @@ switch.
 | `docs/local_dev.md` | settings, model servers, how to run anything |
 | `docs/models.md` | every model weight in prod, its source, size and license obligations |
 | `docs/experiments.md` | what each change to the loop actually measured |
+| `docs/ideas.md` | changes parked until they pay for their complexity |
 | `labs/*` | previously run experiment details, must be pulled separately |
 
 ---
