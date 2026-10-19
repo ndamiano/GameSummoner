@@ -8,39 +8,36 @@ on one RTX 5090 with Qwen3.8 Flash-Next; anything else runs, with no promise abo
 makes. [gamesummoner.com](https://gamesummoner.com) runs the full-size models.
 
 ```bash
-LLAMA_SWAP_URL=http://localhost:8080 JEV_DIR=~/models/jev ./install.sh
+LLAMA_SWAP_URL=http://localhost:8080 ./install.sh
 GameSummoner summon "A game about frogs eating bugs"
 ```
 
 ## What llama-swap must serve
 
-Three entries, all required. `install.sh` checks each one and stops on the first that is missing.
+Three entries, all required, each reached through llama-swap the same way a client reaches any
+model. `install.sh` checks each one and stops on anything missing.
 
 | Entry (default name) | Serves | Reached at |
 |---|---|---|
 | `gamesummoner-llm` | an OpenAI-compatible chat server with tool calls; it designs and writes the game | `/v1/chat/completions`, by model name |
-| `gamesummoner-decide` | SGLang serving JEV-27B-VL with its decision LoRA and hidden states | `/upstream/gamesummoner-decide/` |
+| `gamesummoner-decide` | vLLM serving JEV-27B-VL's decision LoRA as `jev-decision` | `/v1/completions`, by model name |
 | `gamesummoner-comfy` | ComfyUI v0.39.2 with ComfyUI-RMBG and the weights in `docs/models.md` | `/upstream/gamesummoner-comfy/` |
 
 Other names work: set `GS_LLM_MODEL`, `GS_DECIDE_MODEL` and `GS_COMFY_MODEL` for `install.sh`.
 
 ## JEV-27B-VL
 
-The decide entry needs the decision head prepared from JEV and its NVFP4 base (NVFP4 needs a
-Blackwell card):
+The decide entry is stock `vllm serve`: the
+[unsloth/Qwen3.8-27B-NVFP4](https://huggingface.co/unsloth/Qwen3.8-27B-NVFP4) base (NVFP4 needs a
+Blackwell card) with [autotrust/JEV-27B-VL](https://huggingface.co/autotrust/JEV-27B-VL)'s tokenizer
+and its `adapter_vllm` loaded as the `jev-decision` LoRA. Each decision is one completion with
+`max_tokens: 1` and logprobs over the option tokens; the per-option bias and per-kind temperature
+that turn those into probabilities ship with gamesummoner-images (`engines/jev/head/`).
 
 ```bash
-hf download autotrust/JEV-27B-VL --revision 9e53b8a --local-dir ~/models/JEV-27B-VL
-hf download unsloth/Qwen3.8-27B-NVFP4 --revision 7d6f8d4 --local-dir ~/models/Qwen3.8-27B-NVFP4
-docker run --rm -v ~/models:/models -v ~/.gamesummoner/images:/gs -w /gs \
-  lmsysorg/sglang:v0.5.21-cu130-runtime \
-  python3 -m engines.jev.prep --jev /models/JEV-27B-VL --base /models/Qwen3.8-27B-NVFP4 --out /models/jev
+hf download autotrust/JEV-27B-VL --revision 9e53b8a --local-dir /models/JEV-27B-VL
+hf download unsloth/Qwen3.8-27B-NVFP4 --revision 7d6f8d4 --local-dir /models/Qwen3.8-27B-NVFP4
 ```
-
-`--out` is the `JEV_DIR` for `install.sh`: it holds the model SGLang serves, the adapter, and the
-head files the decide contract reads. The images repo is cloned by `install.sh`; clone it first
-(`git clone https://github.com/ndamiano/gamesummoner-images ~/.gamesummoner/images`) to run the prep
-before installing.
 
 ## Example config
 
@@ -57,13 +54,14 @@ models:
     checkEndpoint: /health
 
   gamesummoner-decide:
+    useModelName: jev-decision
     cmd: |
-      docker run --rm --gpus all --network host -v /models:/models
-        lmsysorg/sglang:v0.5.21-cu130-runtime python3 -m sglang.launch_server
-        --model-path /models/jev/model --served-model-name gamesummoner-decide
-        --enable-lora --max-lora-rank 32 --lora-paths jev-decision=/models/jev/adapter_sglang
-        --lora-strict-loading --max-loras-per-batch 2 --enable-return-hidden-states
-        --max-running-requests 1 --host 127.0.0.1 --port ${PORT}
+      docker run --rm --gpus all --ipc host -p ${PORT}:8000 -v /models:/models
+        vllm/vllm-openai:v0.32.0
+        --model /models/Qwen3.8-27B-NVFP4 --tokenizer /models/JEV-27B-VL
+        --enable-lora --max-lora-rank 32 --lora-modules jev-decision=/models/JEV-27B-VL/adapter_vllm
+        --logprobs-mode processed_logprobs --max-logprobs 32 --max-model-len 32768
+        --enforce-eager --limit-mm-per-prompt '{"image":0,"video":0}' --load-format runai_streamer
     checkEndpoint: /health
 
   gamesummoner-comfy:
@@ -79,8 +77,10 @@ groups:
     members: [gamesummoner-llm, gamesummoner-decide, gamesummoner-comfy]
 ```
 
-`--max-running-requests 1` keeps JEV's answers stable: two co-batched requests moved a probability by
-up to 0.05.
+The decide contract sends one prompt per request: JEV's LoRA path moves probabilities when
+sequences share a batch. A decision generates one token, so the decide entry skips what only
+speeds up generation (`--enforce-eager`: no torch.compile, no CUDA graphs) and the vision encoder,
+and streams its weights: it boots in about 45 s on a 5090 instead of 146 s.
 
 ## Not checked locally
 

@@ -78,11 +78,10 @@ def _llama_swap() -> dict:
 
 def _swap_leg(queue: str, swap: dict) -> dict:
     url = swap["url"].rstrip("/")
-    engines = {"llm": url, "decide": f"{url}/upstream/{swap['decide']}",
-               "comfy": f"{url}/upstream/{swap['comfy']}"}
+    engines = {"llm": url, "decide": url, "comfy": f"{url}/upstream/{swap['comfy']}"}
     return {"port": None, "ready": f"{url}/v1/models", "argv": None, "cwd": None, "env": {},
             "engine": engines[queue],
-            "image_args": ["--jev-dir", swap["jev_dir"]] if queue == "decide" else []}
+            "image_args": ["--model", swap["decide"]] if queue == "decide" else []}
 
 
 def _leg(queue: str) -> dict:

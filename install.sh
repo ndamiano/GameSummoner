@@ -9,7 +9,6 @@ swap=${LLAMA_SWAP_URL:-http://localhost:8080}
 llm=${GS_LLM_MODEL:-gamesummoner-llm}
 decide=${GS_DECIDE_MODEL:-gamesummoner-decide}
 comfy=${GS_COMFY_MODEL:-gamesummoner-comfy}
-jev=${JEV_DIR:-$home/models/JEV-27B-VL}
 missing=0
 
 need() { echo "missing: $1" >&2; missing=1; }
@@ -27,17 +26,7 @@ if [ -n "$models" ]; then
     curl -fsS -m 300 -o /dev/null "$swap/upstream/$comfy/system_stats" \
         || need "ComfyUI as model '$comfy' in llama-swap (set GS_COMFY_MODEL)"
 fi
-head=$jev/decision_head.json
-[ -e "$head" ] || head=$jev/adapter_vllm/decision_head.json
-for f in "$jev/readout.safetensors" "$jev/calibration.json" "$head"; do
-    [ -e "$f" ] || need "$f — JEV-27B-VL's decision head, from engines/jev/prep.py (set JEV_DIR)"
-done
 [ "$missing" = 0 ] || { echo "install stopped: everything above is required (docs/llama-swap.md)" >&2; exit 1; }
-
-mkdir -p "$home/jev"
-ln -sfn "$jev/readout.safetensors" "$home/jev/readout.safetensors"
-ln -sfn "$jev/calibration.json" "$home/jev/calibration.json"
-ln -sfn "$head" "$home/jev/decision_head.json"
 
 [ -d "$images" ] || git clone -q https://github.com/ndamiano/gamesummoner-images "$images"
 [ -d "$workers" ] || git clone -q https://github.com/ndamiano/gamesummoner-workers "$workers"
@@ -51,12 +40,12 @@ ln -sfn "$head" "$home/jev/decision_head.json"
 
 settings="$root/src/config/settings.json"
 [ -f "$settings" ] || cp "$root/src/config/settings.example.json" "$settings"
-"$root/venv/bin/python" - "$settings" "$swap" "$llm" "$decide" "$comfy" "$home/jev" <<'PY'
+"$root/venv/bin/python" - "$settings" "$swap" "$llm" "$decide" "$comfy" <<'PY'
 import json, sys
-path, url, llm, decide, comfy, jev_dir = sys.argv[1:]
+path, url, llm, decide, comfy = sys.argv[1:]
 d = json.load(open(path))
 d.setdefault("llm", {})["model"] = llm
-d.setdefault("local", {})["llama_swap"] = {"url": url, "decide": decide, "comfy": comfy, "jev_dir": jev_dir}
+d.setdefault("local", {})["llama_swap"] = {"url": url, "decide": decide, "comfy": comfy}
 json.dump(d, open(path, "w"), indent=2)
 open(path, "a").write("\n")
 PY

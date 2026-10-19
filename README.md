@@ -8,7 +8,7 @@ handle on why we made the choices we've made.
 ## One command
 
 ```bash
-LLAMA_SWAP_URL=http://localhost:8080 JEV_DIR=~/models/jev ./install.sh
+LLAMA_SWAP_URL=http://localhost:8080 ./install.sh
 GameSummoner summon "A game about frogs eating bugs"
 ```
 

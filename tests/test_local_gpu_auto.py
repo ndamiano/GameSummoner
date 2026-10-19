@@ -105,15 +105,14 @@ def test_a_server_auto_did_not_start_is_never_stopped(monkeypatch):
 
 
 def test_llama_swap_legs_start_no_engine_and_reach_each_model_through_the_swap(monkeypatch):
-    swap = {"url": "http://localhost:5001/", "decide": "jev-27b-vl", "comfy": "comfyui_auto",
-            "jev_dir": "/models/jev"}
+    swap = {"url": "http://localhost:5001/", "decide": "gamesummoner-decide", "comfy": "comfyui_auto"}
     monkeypatch.setattr(local_gpu, "_settings", lambda: {"local": {"llama_swap": swap}})
     legs = {q: local_gpu._leg(q) for q in local_gpu.QUEUES}
     assert {q: leg["engine"] for q, leg in legs.items()} == {
         "llm": "http://localhost:5001",
-        "decide": "http://localhost:5001/upstream/jev-27b-vl",
+        "decide": "http://localhost:5001",
         "comfy": "http://localhost:5001/upstream/comfyui_auto"}
     assert all(leg["argv"] is None and leg["ready"] == "http://localhost:5001/v1/models"
                for leg in legs.values())
-    assert legs["decide"]["image_args"] == ["--jev-dir", "/models/jev"]
+    assert legs["decide"]["image_args"] == ["--model", "gamesummoner-decide"]
     assert local_gpu._worker_python("comfy") == str(local_gpu.GPU_PYTHON)
