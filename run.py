@@ -10,6 +10,9 @@ if __name__ == "__main__":
     log_config = uvicorn.config.LOGGING_CONFIG
     log_config["formatters"]["default"]["fmt"] = "%(levelname)s:%(name)s:%(message)s"
     log_config["formatters"]["access"]["fmt"] = "%(levelname)s:%(name)s:%(message)s"
+    log_config["filters"] = {"redact_tokens": {"()": "api.log_redaction.RedactTokens"}}
+    for handler in log_config["handlers"].values():
+        handler["filters"] = ["redact_tokens"]
 
     # propagate=False: these handlers are uvicorn's own, so propagating logs every line twice.
     for logger_name in ["tools", "maestro", "llm_clients"]:
