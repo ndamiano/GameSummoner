@@ -1,16 +1,17 @@
-
 import argparse
-import functools
-import http.server
 import os
-import re
-import socketserver
+import select
 import subprocess
 import sys
+import termios
 import threading
 import time
+import tty
 import urllib.request
 from pathlib import Path
+
+from summon_local import LocalBackend
+from summon_view import Game, Screen
 
 ROOT = Path(__file__).resolve().parent.parent
 PYTHON = str(ROOT / "venv" / "bin" / "python")
@@ -40,79 +41,79 @@ def _spawn(name: str, argv: list) -> subprocess.Popen:
                             start_new_session=True)
 
 
-_BUSY = """
-import sys
-from db import connection
-with connection.platform_db() as c:
-    print(c.execute(
-        "SELECT (SELECT COUNT(*) FROM jobs WHERE game_id = ? AND status IN ('pending', 'claimed'))"
-        " + (SELECT COUNT(*) FROM builds WHERE game_id = ? AND status IN ('queued', 'running'))",
-        (sys.argv[1], sys.argv[1])).fetchone()[0])
-"""
-
-
-def _busy(run_id: str) -> bool:
-    out = subprocess.run([PYTHON, "-c", _BUSY, run_id], cwd=ROOT / "src", capture_output=True,
-                         text=True, check=True)
-    return int(out.stdout.strip()) > 0
-
-
-def _settle(run_id: str) -> None:
-    quiet = 0
-    told = False
-    while quiet < 12:
-        if _busy(run_id):
-            quiet = 0
-            if not told:
-                print("[summon] play-testing the game and fixing what it finds...", flush=True)
-                told = True
-        else:
-            quiet += 1
-        time.sleep(5)
-
-
 def _ensure_account() -> None:
     code = ("from auth import store; import secrets; "
-            "store.list_users() or store.create_user('local', secrets.token_urlsafe(24))")
+            "store.list_users() or store.create_user('local', secrets.token_urlsafe(24), role='admin')")
     subprocess.run([PYTHON, "-c", code], cwd=ROOT / "src", check=True)
 
 
-def _build(request: str) -> tuple:
-    proc = subprocess.Popen([PYTHON, "-u", "-m", "maestro.codegen.run", request], cwd=ROOT / "src",
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    LOGS.mkdir(parents=True, exist_ok=True)
-    game, ok, run_id = None, False, None
-    with open(LOGS / "build.log", "a") as log:
-        for line in proc.stdout:
-            log.write(line)
-            log.flush()
-            if re.match(r"step \d+/\d+$", line.strip()):
-                print(f"\r{line.strip()}", end="", flush=True)
-            elif line.startswith(("run:", "design", "building", "ok=", "summary:", "game:")):
-                print(("\n" if line.startswith("ok=") else "") + line.rstrip()[:160], flush=True)
-            if line.startswith("run:"):
-                run_id = line.split(":", 1)[1].strip()
-            if line.startswith("game:"):
-                game = Path(line.split(":", 1)[1].strip())
-            if line.startswith("ok=True"):
-                ok = True
-    proc.wait()
-    return ok, game, run_id
+class Session:
+    def __init__(self, screen: Screen, backend: LocalBackend):
+        self.screen = screen
+        self.backend = backend
+
+    def act(self, action: tuple) -> None:
+        if action[0] == "summon":
+            game = Game(action[1])
+            self.screen.add(game)
+            self._spawn(self._summon, game)
+        else:
+            self._spawn(self._change, action[1], action[2], action[0] == "stop_change")
+
+    def _spawn(self, fn, *args) -> None:
+        threading.Thread(target=fn, args=args, daemon=True).start()
+
+    def _summon(self, game: Game) -> None:
+        def started(run_id: str) -> None:
+            game.run_id = run_id
+        if not self.backend.summon(game.request, started):
+            game.failed = f"never started, see {LOGS / 'build.log'}"
+
+    def _change(self, game: Game, note: str, stop: bool) -> None:
+        if stop:
+            self.backend.stop(game.run_id)
+        self.backend.change(game.run_id, note)
+
+    def sync(self) -> None:
+        self.screen.merge(self.backend.games())
+        self.screen.queues = self.backend.queues()
+        if self.screen.picked and self.screen.picked.run_id:
+            self.screen.picked.apply(self.backend.detail(self.screen.picked.run_id))
 
 
-def _serve(game: Path, port: int) -> None:
-    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(game))
-    handler.log_message = lambda *a: None
-    with socketserver.ThreadingTCPServer(("0.0.0.0", port), handler) as httpd:
-        print(f"\n[summon] play: http://localhost:{httpd.server_address[1]}/index.html"
-              "  (Ctrl-C to stop)", flush=True)
-        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+def _interactive(session: Session) -> None:
+    screen = session.screen
+    fd = sys.stdin.fileno()
+    saved = termios.tcgetattr(fd)
+    tty.setcbreak(fd)
+    sys.stdout.write("\x1b[?25l")
+    polled = 0.0
+    try:
         while True:
-            time.sleep(3600)
+            if select.select([fd], [], [], 0.12)[0]:
+                action = screen.key(os.read(fd, 1024).decode(errors="ignore"))
+                if action:
+                    session.act(action)
+            if time.time() - polled > 1:
+                polled = time.time()
+                session.sync()
+            screen.draw()
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+        sys.stdout.write("\x1b[?25h\n")
+        sys.stdout.flush()
+
+
+def _plain(session: Session) -> None:
+    while True:
+        session.sync()
+        session.screen.draw()
+        time.sleep(1)
 
 
 def summon(request: str, port: int) -> int:
     started = []
+    session = None
     try:
         if not _up(CONTROL_PLANE):
             started.append(_spawn("control-plane", [PYTHON, "run.py"]))
@@ -123,18 +124,19 @@ def summon(request: str, port: int) -> int:
         if not _auto_running():
             started.append(_spawn("local-gpu", AUTO_ARGV))
         _ensure_account()
-        ok, game, run_id = _build(request)
-        if run_id:
-            _settle(run_id)
-        if game is None:
-            print(f"[summon] the build produced no game — see {LOGS / 'build.log'}")
-            return 1
-        if not ok:
-            print("[summon] the build did not finish cleanly; serving what it made")
-        _serve(game, port)
+        screen = Screen()
+        if not screen.live and not request:
+            sys.exit("[summon] give a request, or run it in a terminal to type one")
+        LOGS.mkdir(parents=True, exist_ok=True)
+        session = Session(screen, LocalBackend(port, LOGS))
+        if request:
+            session.act(("summon", request))
+        (_interactive if screen.live else _plain)(session)
     except KeyboardInterrupt:
-        print()
+        pass
     finally:
+        if session:
+            session.backend.close()
         for proc in reversed(started):
             if proc.poll() is None:
                 os.killpg(proc.pid, 15)
@@ -143,12 +145,13 @@ def summon(request: str, port: int) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(prog="GameSummoner")
-    sub = parser.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("summon", help="build a game from a prompt and serve it")
-    p.add_argument("request", nargs="+")
+    parser.add_argument("--port", type=int, default=8130)
+    sub = parser.add_subparsers(dest="cmd")
+    p = sub.add_parser("summon", help="build games from prompts and serve them")
+    p.add_argument("request", nargs="*")
     p.add_argument("--port", type=int, default=8130)
     args = parser.parse_args()
-    return summon(" ".join(args.request), args.port)
+    return summon(" ".join(getattr(args, "request", [])), args.port)
 
 
 if __name__ == "__main__":
