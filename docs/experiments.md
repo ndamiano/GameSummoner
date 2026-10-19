@@ -2536,3 +2536,62 @@ improve what the model can measure, not what a player feels.
 that play through.
 
 **Details.** `labs/refine-passes/README.md`, one commit per pass in the labs repo.
+
+====================================================================================================
+
+## 2026-10-18 — frontier models in the llm seat (Opus 5.5, Sonnet 5.5, DeepSeek V4.1 Flash, Gemini 4 Argon via hosted APIs; local Flash-Next control)
+
+**Question.** Google Playground beats our games on coherence, sound, art and feel. Is the gap the
+model or the harness? Swap only the model behind the llm queue (prompts, design chain, build path
+and 200-step cap unchanged) and play what comes out.
+
+**Setup.** Lab engines stand where SGLang or basalt would, behind the stock contract server and
+worker: `anthropic_engine.py` translates the canonical chat request to the Anthropic Messages API;
+`openai_engine.py` passes it through to DeepSeek's and Google's OpenAI-compatible endpoints;
+`router_engine.py` picks a backend per ask so several models share the one llm queue. JEV and art
+stay on the 5090. Ask: the launch-battery wizard-cat roguelike deckbuilder for every model, plus
+DeepSeek on the other five launch-battery asks. Control: the same ask built locally with
+Flash-Next on the same code and day (the prod control from 2026-10-07 never finished). Nick
+played everything.
+
+**Result.**
+
+| Model | Games | Nick | Cost per game | Notes |
+|---|---:|---|---:|---|
+| Opus 5.5 | 1 | 9 | ~$22 | tier 1 by step 75; steps 76–200 lost to the re-read cycle (~$12) |
+| DeepSeek V4.1 Flash | 6 | 4.5–8, mean ~6.25 | ~$0.65 | 1 of 6 claimed tier 1; all capped at 200 |
+| Gemini 4 Argon | 1 | ≤5.5 | $2.13 | claimed all four tiers, passed the play gate, not finishable |
+| Sonnet 5.5 | 1 | — | ~$1.30 | broken by a per-turn task budget; not graded |
+| Flash-Next (local) | 1 | "awful" | $0 API | tier 1 at step ~155 |
+
+Opus's 9 is the first GameSummoner game to approach (not pass) a human-made, or at least
+human-in-the-loop, game at this size and cost: "kinda insanely good". DeepSeek's six: bullet hell
+8, farming 7, kart 6.5 (karts appear late, track backwards), wizard cat 6.5, zombie 5 ("a fever
+dream"), mystery 4.5 (striking style, the writing kills it).
+
+Opus 5.5 would not write the design. On the tool-less 100K-token write it drafted the whole spec
+inside its reasoning, section by section, and hit the output cap with no text, three times
+(64K, 100K, then killed): at xhigh, at medium, and with an explicit "write it in the reply" note.
+Given section tools (`write_section`, `done`) it still thought for two full 32K turns without
+saving one. A task budget the model can see (`task_budget`, beta `task-budgets-2026-03-13`, 60K
+for the whole write) fixed it: 12 turns, 8 minutes, $1.27, a 54 KB spec that held up. Sonnet
+behaved the same on the write, and on build turns too; a per-turn task budget stopped that, but
+the model read it as the budget for the whole build and called done at step 9 ("incomplete
+against the spec"). DeepSeek and Argon wrote the spec in one call without trouble ($0.08, $0.28).
+
+Audio was bad in every game, from every model.
+
+**Verdict.** The model is the gap, on one ask per frontier model and one battery. The harness can
+carry a game to near-human quality; what stands between that and a product is the cost of the
+model that does it and the re-read cycle that wastes half of its build. No cheaper model closes
+the gap: DeepSeek is the value point (a playable, uneven 6 for under a dollar, about prod's cost
+per game today), Argon's self-report and the gates said done where play said unfinishable. Audio
+is a harness ceiling: build.txt routes every sound through lib/audio.js.
+
+**Ruling.** Lab closed, nothing merged into src/. Carry forward: a visible task budget is how a
+Claude 5.5 model writes a long tool-less document (and a per-turn budget must not be put on build
+turns); pause builds before touching an llm stack, since four unreadable turns in a row stop a
+build. Next, as labs: an Opus spec built by DeepSeek (`labs/opus-design-deepseek-build`), models
+writing their own audio (`labs/model-owned-audio`). The re-read cycle stays the open cost lever.
+
+**Details.** `labs/frontier-ceiling/README.md`; shared Opus game https://gamesummoner.com/g/r12ctNpfCeWH.
