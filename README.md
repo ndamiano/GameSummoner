@@ -5,6 +5,20 @@ Type a game prompt, click go, a playable browser game comes out.
 How we work here is defined in `CLAUDE.md` and `docs/design-philosophy.md`, which should help get a
 handle on why we made the choices we've made.
 
+## One command
+
+```bash
+./install.sh
+GameSummoner summon "A game about frogs eating bugs"
+```
+
+`install.sh` stops on anything missing, and everything it checks for is required: Python 3.12, Node
+20, an NVIDIA driver, Docker (the decide box), Basalt with its model config, ComfyUI v0.39.2, and
+the [`gamesummoner-images`](https://github.com/ndamiano/gamesummoner-images) and
+[`gamesummoner-workers`](https://github.com/ndamiano/gamesummoner-workers) checkouts. `summon`
+starts the control plane and `scripts/local_gpu.py auto` if they are not already up, builds the
+game, and serves it until Ctrl-C, stopping whatever it started. Logs go to `~/.gamesummoner/logs/`.
+
 ## Getting Started
 
 **You need:** Python 3.12, Node 20, git, and a GPU box that can serve a model (see "A GPU").

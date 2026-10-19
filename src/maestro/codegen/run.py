@@ -116,10 +116,14 @@ def change_from_note(run_id: str, note: str,
 def _await_build(run_id: str) -> BuildResult:
     """Block until the build's cursor reports done, then summarize it. CLI-only."""
     state = RunState(run_id)
+    shown = 0
     while True:
         cursor = build_state.load(state.run_dir)
         if cursor is not None and cursor.phase == "done":
             break
+        if cursor is not None and cursor.step != shown:
+            shown = cursor.step
+            print(f"step {shown}/{cursor.max_steps}", flush=True)
         time.sleep(_POLL_INTERVAL)
     elapsed = time.time() - cursor.t0
     logger.info("build %s: ok=%s steps=%d elapsed=%.1fs", run_id, cursor.ok, cursor.step, elapsed)
