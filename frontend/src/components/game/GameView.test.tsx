@@ -92,3 +92,35 @@ describe('GameView before the first build', () => {
         expect(buildButton().hasAttribute('disabled')).toBe(false)
     })
 })
+
+describe('GameView after a failed build', () => {
+    it('shows what the failed build made as playable, warns, and buffs with mana', async () => {
+        mount(detail({ built: true, has_game: true, status: 'failed', title: 'Snail Derby' }))
+        const resume = vi.spyOn(api, 'resumeGame').mockResolvedValue({ status: 'building' })
+
+        expect(await screen.findByText(/gone awry\. you can play what's here/i)).toBeTruthy()
+        expect(screen.getByText('gone awry')).toBeTruthy()
+        expect(screen.queryByRole('button', { name: /build it/i })).toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: /buff the summoning/i }))
+        await waitFor(() => expect(resume).toHaveBeenCalledWith('r1'))
+    })
+
+    it('says the spell fizzled when nothing playable was left, and offers the build again', async () => {
+        mount(detail({ status: 'failed' }))
+
+        expect(await screen.findByText(/fizzled before anything playable/i)).toBeTruthy()
+        expect(screen.queryByRole('button', { name: /buff the summoning/i })).toBeNull()
+        expect(buildButton().hasAttribute('disabled')).toBe(false)
+    })
+
+    it('turns a live build that ends with ok:false into the warning', async () => {
+        mount(detail({ building: true, status: 'building' }),
+            detail({ built: true, has_game: true, status: 'failed' }))
+        vi.spyOn(api, 'getGameEvents').mockResolvedValue([])
+        await screen.findByRole('button', { name: /stop and keep it/i })
+
+        act(() => { listener?.({ type: 'build_done', run_id: 'r1', ok: false }) })
+
+        expect(await screen.findByText(/gone awry\. you can play what's here/i)).toBeTruthy()
+    })
+})

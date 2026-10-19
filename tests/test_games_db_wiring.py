@@ -54,6 +54,18 @@ def test_list_and_detail_come_from_the_db(client):
     assert detail["budget_pct_remaining"] is None   # uncharged → no bar
 
 
+def test_a_failed_build_reads_failed_whether_or_not_it_left_a_playable_game(client, monkeypatch):
+    user, headers = _user()
+    run_id = _make_game(user.id, {"request": "make a moon miner", "title": "Moon Miner"})
+    games.set_status(run_id, "failed")
+    detail = client.get(f"/api/games/{run_id}", headers=headers).json()
+    assert (detail["status"], detail["built"]) == ("failed", False)
+
+    monkeypatch.setattr("api.routers.games.is_staged", lambda rid: rid == run_id)
+    detail = client.get(f"/api/games/{run_id}", headers=headers).json()
+    assert (detail["status"], detail["built"]) == ("failed", True)
+
+
 def test_new_game_creates_the_run_and_starts_its_design(client, monkeypatch):
     """Create opens the ask and enqueues the DESIGN — the build starts from the design's own
     completion, so at this point the run is charged but nothing is authored yet."""

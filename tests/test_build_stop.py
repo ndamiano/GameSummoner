@@ -56,9 +56,9 @@ def test_a_stopped_build_keeps_a_playable_game(run, tmp_path, calls):
     assert calls["status"] == "built" and calls["staged"] is True
 
 
-def test_a_stopped_build_with_nothing_written_failed(run, tmp_path, calls):
+def test_a_stopped_build_with_nothing_written_reads_stopped(run, tmp_path, calls):
     build_chain.stop(run)
-    assert calls["status"] == "failed" and calls["staged"] is False
+    assert calls["status"] == "stopped" and calls["staged"] is False
 
 
 def test_the_attempt_is_recorded_as_stopped_not_succeeded(run, tmp_path, calls):
@@ -115,14 +115,14 @@ def _designing(tmp_runs):
     return run_id, bid, job
 
 
-def test_stop_during_design_cancels_the_design_and_the_run_ends_failed(tmp_runs, quiet):
+def test_stop_during_design_cancels_the_design_and_the_run_ends_stopped(tmp_runs, quiet):
     run_id, bid, job = _designing(tmp_runs)
     assert build_chain.stop(run_id) is True
     assert jobs.get_job(job)["status"] == "failed"
     assert jobs.get_job(job)["error"] == "the run was stopped by hand"
     (build,) = games.builds_for(run_id)
     assert build["status"] == "stopped"
-    assert games.game(run_id)["status"] == "failed"
+    assert games.game(run_id)["status"] == "stopped"
     assert build_chain.stop(run_id) is False
 
 
@@ -209,7 +209,7 @@ def test_stop_with_a_cursor_ends_the_other_open_builds_too(tmp_runs, quiet, monk
     build_chain.stop(run_id)
     assert {b["id"]: b["status"] for b in games.builds_for(run_id)} == {
         bid: "stopped", art: "stopped"}
-    assert games.game(run_id)["status"] == "failed"
+    assert games.game(run_id)["status"] == "stopped"
 
 
 def test_the_api_answers_409_with_nothing_in_flight(tmp_runs, app_client):
@@ -250,7 +250,7 @@ def test_an_admin_stops_a_run_owned_by_someone_else(tmp_runs, app_client, quiet)
     r = app_client.post("/api/admin/games/g1/stop", headers=admin_hdr)
     assert r.status_code == 200 and r.json()["owner"] == owner.id
     assert jobs.get_job(job)["status"] == "failed"
-    assert games.game("g1")["status"] == "failed"
+    assert games.game("g1")["status"] == "stopped"
 
 
 def test_the_admin_stop_is_admin_only(tmp_runs, app_client, quiet):

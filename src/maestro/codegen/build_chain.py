@@ -95,7 +95,7 @@ def _end_design(run_id: str, rs: RunState, build_id: str) -> None:
     spec = rs.read_spec() or {}
     if not spec.get("request") and spec.get("ask"):
         set_prompt(run_id, spec["ask"], event="prompt_proposed")
-    games.set_status(run_id, "failed")
+    games.set_status(run_id, "stopped")
     _emit("build_done", run_id, build_id=build_id, ok=False, steps=0)
 
 
@@ -230,7 +230,8 @@ def _advance_locked(run_id: str, result: Optional[Dict], landed: Optional[Dict] 
         return
 
     _emit_step(run_id, cursor, outcome.report)
-    _finalize(run_id, rs, cursor, ok=_playable(rs.run_dir) and cursor.finished)
+    _finalize(run_id, rs, cursor, ok=_playable(rs.run_dir)
+              and (cursor.finished or cursor.turn >= cursor.max_steps))
 
 
 def _archive_turn(rs: RunState, cursor: BuildCursor, landed: Dict, result: Optional[Dict]) -> None:
@@ -248,9 +249,9 @@ def _playable(run_dir) -> bool:
 
 
 def _finalize(run_id: str, rs: RunState, cursor: BuildCursor, ok: bool,
-              attempt: Optional[str] = None) -> None:
-    """`ok` is whether the game is playable; `attempt` is how the build ended."""
-    held = artifact_screen.screen_artifact(rs.run_dir) if ok else None
+              attempt: Optional[str] = None, error: Optional[str] = None) -> None:
+    playable = _playable(rs.run_dir)
+    held = artifact_screen.screen_artifact(rs.run_dir) if playable else None
     # A gated build is not FINISHED yet, and saying it is shows a person a built game that cuts
     # back to mending seconds later. It stages — the gate opens the staged game — but the status,
     # the event and the phase wait for `_settle`.
@@ -271,7 +272,7 @@ def _finalize(run_id: str, rs: RunState, cursor: BuildCursor, ok: bool,
         _emit("build_done", run_id, build_id=cursor.build_id, ok=False, steps=cursor.step,
               held=True)
         return
-    if ok:
+    if playable:
         stage_for_play(rs.run_dir, run_id)
         snapshots.take(rs.run_dir, "built")
     if cursor.build_id:
@@ -284,13 +285,15 @@ def _finalize(run_id: str, rs: RunState, cursor: BuildCursor, ok: bool,
         # no gate: the human ended it, and an auto-build would restart what they stopped.
         threading.Thread(target=_post_finalize, args=(run_id, cursor.build_id), daemon=True).start()
         return
-    _announce(run_id, rs, cursor, ok)
+    _announce(run_id, rs, cursor, ok, error, stopped=attempt == "stopped")
 
 
-def _announce(run_id: str, rs: RunState, cursor: BuildCursor, ok: bool) -> None:
+def _announce(run_id: str, rs: RunState, cursor: BuildCursor, ok: bool,
+              error: Optional[str] = None, stopped: bool = False) -> None:
     """The end of the whole chain, said once: the run's status and `build_done`."""
-    games.set_status(run_id, "built" if ok else "failed")
-    _emit("build_done", run_id, build_id=cursor.build_id, ok=ok, steps=cursor.step)
+    games.set_status(run_id, "built" if ok else "stopped" if stopped else "failed")
+    extra = {"error": error} if error else {}
+    _emit("build_done", run_id, build_id=cursor.build_id, ok=ok, steps=cursor.step, **extra)
 
 
 def _settle(run_id: str) -> None:
@@ -344,15 +347,7 @@ def _enqueue_turn(run_id: str, cursor: BuildCursor, inf: "build_steps.Infer") ->
             except errors.InsufficientCompute as e2:
                 err = e2
         logger.error("build %s turn refused: %s", run_id, err)
-        rs = RunState(run_id)
-        cursor.phase = "done"
-        cursor.ok = False
-        build_state.save(rs.run_dir, cursor)
-        games.set_status(run_id, "failed")
-        if cursor.build_id:
-            games.build_finished(cursor.build_id, "failed", steps=cursor.step)
-        _emit("build_done", run_id, build_id=cursor.build_id, ok=False, steps=cursor.step,
-              error=f"compute exhausted: {e}")
+        _finalize(run_id, RunState(run_id), cursor, ok=False, error=f"compute exhausted: {err}")
 
 
 def _emit_step(run_id: str, cursor: BuildCursor, summary: str) -> None:

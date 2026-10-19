@@ -21,6 +21,7 @@ const STATUS_PILL: Record<string, { label: string; tone: 'live' | 'wait' | 'idle
     changing: { label: 'changing', tone: 'wait' },
     paused: { label: 'paused', tone: 'idle' },
     built: { label: 'built', tone: 'live' },
+    failed: { label: 'gone awry', tone: 'idle' },
     held: { label: 'unavailable', tone: 'idle' },
 }
 
@@ -107,7 +108,7 @@ export const GameView: React.FC<{ runId: string; onChanged: () => void; onBack: 
                 case 'build_resumed':
                     setStatus('running'); break
                 case 'build_done':
-                    setBuilding(false); setStatus('built'); load(); onChanged(); break
+                    setBuilding(false); load(); onChanged(); break
                 case 'assets_done':
                     setRenderPending(false); setAssetsVersion(v => v + 1); load(); onChanged(); break
             }
@@ -143,6 +144,7 @@ export const GameView: React.FC<{ runId: string; onChanged: () => void; onBack: 
     const build = () => startBuild(false)
     const regenerate = () => startBuild(true)
     const pause = () => { setStatus('paused'); act(() => api.pauseGame(runId), 'Pause failed', false) }
+    const buff = () => act(() => api.resumeGame(runId), 'Buff failed')
     const resume = () => { setStatus('running'); act(() => api.resumeGame(runId), 'Resume failed', false) }
     const stop = () => act(() => api.stopGame(runId), 'Stop failed', false)
     const renderArt = () => act(async () => { setRenderPending(true); await api.renderAssets(runId) }, 'Render failed', false)
@@ -177,8 +179,9 @@ export const GameView: React.FC<{ runId: string; onChanged: () => void; onBack: 
 
     const held = detail.status === 'held'
     const stage = held ? 'held' : stageFor(building, detail.built, detail.prompt == null)
+    const awry = !building && !held && detail.status === 'failed'
     const pill = held ? STATUS_PILL.held
-        : STATUS_PILL[building ? status : detail.built ? 'built' : 'idle']
+        : STATUS_PILL[building ? status : awry ? 'failed' : detail.built ? 'built' : 'idle']
     const budget = budgetFraction(detail.budget_pct_remaining)
 
     return (
@@ -216,6 +219,21 @@ export const GameView: React.FC<{ runId: string; onChanged: () => void; onBack: 
                 </div>
 
                 {error && <p className="text-fail text-sm">{error}</p>}
+
+                {awry && (
+                    <div role="status" className="bg-panel border border-wait/40 rounded-md p-4 flex items-center justify-between gap-4 flex-wrap">
+                        <p className="text-sm text-bone">
+                            {detail.built
+                                ? "The spell seems to have gone awry. You can play what's here, but it may not work properly."
+                                : 'The spell fizzled before anything playable appeared.'}
+                        </p>
+                        {detail.built && (
+                            <Button variant="primary" onClick={buff} disabled={acting}>
+                                Spend mana to buff the summoning
+                            </Button>
+                        )}
+                    </div>
+                )}
 
                 {stage === 'held' && (
                     <div className="max-w-2xl bg-panel border border-edge rounded-md p-6 text-sm text-slate">

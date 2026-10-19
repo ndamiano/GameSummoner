@@ -175,6 +175,8 @@ async def get_game(run_id: str, user: User = Depends(get_current_user)):
     elif row.get("status") == "held":
         # A held game may still have an older staged copy on disk; held wins so nothing offers it.
         status, built = "held", False
+    elif row.get("status") == "failed":
+        status = "failed"
     else:
         status = "built" if built else "idle"
     return {

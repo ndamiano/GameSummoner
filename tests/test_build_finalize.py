@@ -16,14 +16,18 @@ from maestro.state import RunState
 
 @pytest.fixture
 def seen(monkeypatch):
-    out = {"status": [], "events": [], "finished": [], "archived": [], "threads": []}
-    monkeypatch.setattr(build_chain, "_emit",
-                        lambda ev, run_id, **kw: out["events"].append(ev))
+    out = {"status": [], "events": [], "payloads": [], "finished": [], "archived": [],
+           "threads": [], "staged": []}
+
+    def _emit(ev, run_id, **kw):
+        out["events"].append(ev)
+        out["payloads"].append(kw)
+    monkeypatch.setattr(build_chain, "_emit", _emit)
     monkeypatch.setattr(build_chain.games, "set_status",
                         lambda run_id, s: out["status"].append(s))
     monkeypatch.setattr(build_chain.games, "build_finished",
                         lambda bid, s, steps=None: out["finished"].append(s))
-    monkeypatch.setattr(build_chain, "stage_for_play", lambda *a, **k: None)
+    monkeypatch.setattr(build_chain, "stage_for_play", lambda run_dir, slug: out["staged"].append(slug))
     monkeypatch.setattr(build_chain.snapshots, "take", lambda *a, **k: None)
     monkeypatch.setattr(build_chain.artifact_screen, "screen_artifact", lambda *a, **k: None)
 
@@ -103,8 +107,50 @@ def test_a_build_stopped_by_hand_is_announced_at_once(tmp_path, seen):
     assert seen["threads"] == []
 
 
-def test_a_failed_build_is_announced_at_once(tmp_path, seen):
+def test_a_failed_build_is_announced_at_once_and_still_staged_when_playable(tmp_path, seen):
     rid, rs, cursor = _run(tmp_path)
     build_chain._finalize(rid, rs, cursor, ok=False)
     assert build_state.load(tmp_path).phase == "done"
     assert seen["status"] == ["failed"] and seen["events"] == ["build_done"]
+    assert seen["staged"] == [rid] and seen["finished"] == ["failed"]
+    assert seen["payloads"][0]["ok"] is False
+
+
+def test_a_failed_build_with_no_entry_point_stages_nothing(tmp_path, seen):
+    rid, rs, cursor = _run(tmp_path)
+    (tmp_path / "game" / "index.html").unlink()
+    build_chain._finalize(rid, rs, cursor, ok=False)
+    assert seen["staged"] == [] and seen["status"] == ["failed"]
+
+
+def test_running_out_of_compute_mid_build_stages_what_was_made(tmp_path, seen, monkeypatch):
+    rid, rs, cursor = _run(tmp_path)
+
+    def _refuse(*a, **k):
+        raise build_chain.errors.InsufficientCompute("g1", 0, 1)
+    monkeypatch.setattr(build_chain.jobs, "enqueue_job", _refuse)
+    monkeypatch.setattr(build_chain.jobs, "abandon_pending_batch_jobs", lambda *a: 0)
+    monkeypatch.setattr(build_chain, "get_connector", lambda: type(
+        "C", (), {"build_llm_job": lambda self, *a: ({}, "m")})())
+    build_chain._enqueue_turn(rid, cursor, build_chain.build_steps.Infer(
+        messages=[], schemas=[], max_tokens=1, report=""))
+    assert build_state.load(tmp_path).phase == "done"
+    assert seen["staged"] == [rid] and seen["status"] == ["failed"]
+    assert seen["payloads"][0]["error"].startswith("compute exhausted")
+
+
+@pytest.mark.parametrize("turn, finished, want", [
+    (200, False, "succeeded"),
+    (37, False, "failed"),
+    (37, True, "succeeded"),
+])
+def test_only_a_build_that_gave_up_early_fails(tmp_path, seen, monkeypatch, turn, finished, want):
+    rid, rs, cursor = _run(tmp_path)
+    cursor.turn, cursor.max_steps, cursor.finished = turn, 200, finished
+    build_state.save(tmp_path, cursor)
+    monkeypatch.setattr(build_chain, "build_tools", lambda rs, build_id: None)
+    monkeypatch.setattr(build_chain.build_steps, "step",
+                        lambda *a, **k: build_chain.build_steps.Done("ended"))
+    build_chain._advance_locked(rid, None)
+    assert seen["finished"] == [want] and seen["staged"] == [rid]
+
