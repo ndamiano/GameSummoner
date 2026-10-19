@@ -8,16 +8,20 @@ handle on why we made the choices we've made.
 ## One command
 
 ```bash
-LLAMA_SWAP_URL=http://localhost:8080 ./install.sh
-GameSummoner summon "A game about frogs eating bugs"
+./install.sh
+GameSummoner
 ```
 
 Locally, GameSummoner expects [llama-swap](https://github.com/mostlygeek/llama-swap) serving three
 models: a tool-calling LLM, the JEV-27B-VL decision model, and ComfyUI. `docs/llama-swap.md` lists
 exactly what each must be, with an example config. `install.sh` checks every requirement and
 stops on anything missing (Python 3.12, Node 20, git, and the three models), then installs.
-`summon` starts the control plane and the queue workers, builds the game, waits for its play-test
-fixes, and serves it until Ctrl-C. Logs go to `~/.gamesummoner/logs/`.
+
+`GameSummoner` starts the control plane and the queue workers and opens a terminal view of every
+game built on this machine: each one's design, build and play-test progress, the queues, and a play
+link. Type a request on the top row to summon a game, or pick a game and type a change; several
+games can build at once. `GameSummoner summon "A game about frogs eating bugs"` opens it with that
+request already sent. Ctrl-C stops everything it started. Logs go to `~/.gamesummoner/logs/`.
 
 We build and test on one RTX 5090 with Qwen3.8 Flash-Next. Other hardware and models run, with no
 promise about the games they make; [gamesummoner.com](https://gamesummoner.com) runs the full-size

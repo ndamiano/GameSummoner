@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time setup for `GameSummoner summon "<request>"` on this machine.
+# One-time setup for `GameSummoner` on this machine.
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 home=${GAMESUMMONER_HOME:-$HOME/.gamesummoner}
@@ -61,5 +61,5 @@ exec "$root/venv/bin/python" "$root/scripts/summon.py" "\$@"
 EOF
 chmod +x "$HOME/.local/bin/GameSummoner"
 
-echo "installed: GameSummoner summon \"A game about frogs eating bugs\""
+echo "installed: run GameSummoner"
 case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) echo "add ~/.local/bin to your PATH first" ;; esac

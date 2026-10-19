@@ -1,6 +1,6 @@
 # Running locally on llama-swap
 
-`GameSummoner summon` runs on a machine whose models sit behind
+`GameSummoner` runs on a machine whose models sit behind
 [llama-swap](https://github.com/mostlygeek/llama-swap). llama-swap starts and stops each server on
 demand, so one card holds whichever model the build needs next; `scripts/local_gpu.py auto` drains
 one queue at a time, so the card swaps once per stage rather than once per job. We build and test
@@ -8,9 +8,13 @@ on one RTX 5090 with Qwen3.8 Flash-Next; anything else runs, with no promise abo
 makes. [gamesummoner.com](https://gamesummoner.com) runs the full-size models.
 
 ```bash
-LLAMA_SWAP_URL=http://localhost:8080 ./install.sh
-GameSummoner summon "A game about frogs eating bugs"
+./install.sh
+GameSummoner
 ```
+
+`install.sh` looks for llama-swap at its default address, `http://localhost:8080`; set
+`LLAMA_SWAP_URL` if yours listens elsewhere. `GameSummoner` opens a terminal view of every game built
+on this machine; type a request on its top row to summon one. The README covers the view.
 
 ## What llama-swap must serve
 
