@@ -27,19 +27,6 @@
     "tick_seconds": 15,
     "stale_worker_seconds": 180,
     "queues": {
-      "mesh": {
-        "template_id": "your-mesh-template-id",
-        "gpu_type_ids": [
-          "NVIDIA GeForce RTX 5090",
-          "NVIDIA RTX PRO 4500 Blackwell"
-        ],
-        "max_workers": 3,
-        "boot_seconds": 150,
-        "min_jobs_per_pod": 6,
-        "cooldown_seconds": 90,
-        "idle_exit_seconds": 120,
-        "boot_deadline_seconds": 300
-      },
       "llm": {
         "template_id": "",
         "network_volume_ids": [],

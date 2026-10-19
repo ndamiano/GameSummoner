@@ -17,7 +17,7 @@ from PIL import Image
 from db import errors, games, jobs
 from maestro.codegen.staging import game_dir
 from maestro.state import RunState
-from tools.comfyui_tools import MATTED_KINDS, build_image_payload
+from tools.comfyui_tools import MATTED_KINDS, build_image_payload, build_mesh_payload
 from tools.execution_context import run_scope
 
 logger = logging.getLogger(__name__)
@@ -335,22 +335,17 @@ def _enqueue_batch(run_id: str, entries: List[Dict], build_id: str) -> str:
     for e in entries:
         kind = entry_kind(e)
         mesh = kind == "mesh"
-        queue = "image"
         payload = build_image_payload(e["prompt"], kind)
         then = _then_for(kind, "art_build")
         src = asset_path(run_id, e["id"], "src.png")
         if mesh and src.exists():
-            # A mesh needs ComfyUI and then TRELLIS, and one GPU can only hold one of them, so a
-            # top-up that always restarted at the image leg could never reach the second half.
-            queue = "mesh"
             then = {"operations": ["decimate"], "finalize": "art_build"}
-            payload = {"kind": "trellis_mesh",
-                       "image_b64": base64.b64encode(src.read_bytes()).decode("ascii")}
+            payload = build_mesh_payload(base64.b64encode(src.read_bytes()).decode("ascii"))
         if payload is None:
             logger.warning("assets %s: %s blocked by the safety filter — not sent", run_id, e["id"])
             continue
         try:
-            jobs.enqueue_job(queue, payload, game_id=run_id, build_id=build_id,
+            jobs.enqueue_job("image", payload, game_id=run_id, build_id=build_id,
                                  batch_id=batch_id,
                                  metadata={"run_id": run_id, "asset_id": e["id"],
                                            "kind": kind, "then": then})

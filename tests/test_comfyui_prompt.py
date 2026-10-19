@@ -13,7 +13,7 @@ re-bake-off (2026-09-04) retired the anime checkpoint.
 import pytest
 
 from tools.comfyui_tools import (MESH_STYLE, MESH_STYLES, build_image_job, build_image_payload,
-                                 build_img2img_job)
+                                 build_img2img_job, build_mesh_payload)
 
 
 def test_the_prompt_is_the_positive_verbatim():
@@ -147,3 +147,12 @@ def test_a_mesh_img2img_seeds_from_the_init_image():
     assert wf["k"]["inputs"]["latent_image"] == ["ve", 0]
     assert wf["k"]["inputs"]["denoise"] == 0.4
     assert "l" not in wf
+
+
+def test_a_mesh_payload_loads_its_upload_and_seeds_every_stage():
+    payload = build_mesh_payload("QUJD", seed=7)
+    wf = payload["workflow"]
+    assert payload["kind"] == "comfy_mesh"
+    assert wf["li"]["inputs"]["image"] == payload["uploads"][0]["name"]
+    assert payload["uploads"][0]["b64"] == "QUJD"
+    assert {wf[node]["inputs"]["seed"] for node in ("ks1", "ks2", "ks4")} == {7}

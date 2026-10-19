@@ -182,7 +182,10 @@ def test_every_reconstruction_carries_a_seed(monkeypatch, tmp_path):
     seen = []
 
     def fake_run_job(queue, payload, model=None, timeout_seconds=None):
-        seen.append(payload["seed"])
+        assert queue == "image"
+        seeds = {payload["workflow"][node]["inputs"]["seed"] for node in ("ks1", "ks2", "ks4")}
+        assert len(seeds) == 1, "every TRELLIS.2 stage samples from the one seed"
+        seen.append(seeds.pop())
         glb = tmp_path / f"landed_{len(seen)}.glb"
         glb.write_bytes(b"glb")
         return {"status": "done", "result": {"glb_file": str(glb)}}

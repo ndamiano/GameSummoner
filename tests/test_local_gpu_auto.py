@@ -12,59 +12,59 @@ spec.loader.exec_module(local_gpu)
 
 
 def test_nothing_pending_holds_nothing():
-    assert local_gpu.choose_action(None, {"llm": 0, "image": 0, "mesh": 0}, {}, 3) is None
+    assert local_gpu.choose_action(None, {"llm": 0, "image": 0}, {}, 3) is None
 
 
 def test_starts_on_priority_order_when_nothing_held():
-    pending = {"llm": 0, "image": 2, "mesh": 1}
-    assert local_gpu.choose_action(None, pending, {}, 3) == "image"
+    pending = {"decide": 1, "llm": 0, "image": 2}
+    assert local_gpu.choose_action(None, pending, {}, 3) == "decide"
 
 
-def test_llm_wins_priority_over_image_and_mesh():
-    pending = {"llm": 1, "image": 2, "mesh": 1}
+def test_llm_wins_priority_over_image():
+    pending = {"llm": 1, "image": 2}
     assert local_gpu.choose_action(None, pending, {}, 3) == "llm"
 
 
 def test_held_queue_keeps_the_card_while_it_has_work():
-    pending = {"llm": 1, "image": 5, "mesh": 0}
-    idle_ticks = {"llm": 0, "image": 0, "mesh": 0}
+    pending = {"llm": 1, "image": 5}
+    idle_ticks = {"llm": 0, "image": 0}
     assert local_gpu.choose_action("llm", pending, idle_ticks, 3) == "llm"
 
 
 def test_a_starving_queue_takes_the_card_from_a_busy_one():
-    pending = {"llm": 1, "image": 0, "mesh": 5}
-    waits = {"llm": 5.0, "image": 0.0, "mesh": local_gpu.STARVE_SECONDS + 1}
-    assert local_gpu.choose_action("llm", pending, {"llm": 0}, 3, waits) == "mesh"
+    pending = {"llm": 1, "image": 5}
+    waits = {"llm": 5.0, "image": local_gpu.STARVE_SECONDS + 1}
+    assert local_gpu.choose_action("llm", pending, {"llm": 0}, 3, waits) == "image"
     # under the cut-off the held queue keeps the card
-    waits["mesh"] = local_gpu.STARVE_SECONDS - 1
+    waits["image"] = local_gpu.STARVE_SECONDS - 1
     assert local_gpu.choose_action("llm", pending, {"llm": 0}, 3, waits) == "llm"
 
 
 def test_the_longest_starving_queue_wins_and_the_held_one_never_counts():
-    pending = {"llm": 1, "image": 2, "mesh": 1}
-    waits = {"llm": 9999.0, "image": local_gpu.STARVE_SECONDS + 5,
-             "mesh": local_gpu.STARVE_SECONDS + 50}
-    assert local_gpu.choose_action("llm", pending, {"llm": 0}, 3, waits) == "mesh"
+    pending = {"decide": 1, "llm": 1, "image": 2}
+    waits = {"llm": 9999.0, "image": local_gpu.STARVE_SECONDS + 50,
+             "decide": local_gpu.STARVE_SECONDS + 5}
+    assert local_gpu.choose_action("llm", pending, {"llm": 0}, 3, waits) == "image"
 
 
 def test_held_queue_keeps_card_through_a_momentary_empty():
     # a completion just fired; a continuation may land before the idle-tick limit
-    pending = {"llm": 0, "image": 5, "mesh": 0}
-    idle_ticks = {"llm": 1, "image": 0, "mesh": 0}
+    pending = {"llm": 0, "image": 5}
+    idle_ticks = {"llm": 1, "image": 0}
     assert local_gpu.choose_action("llm", pending, idle_ticks, 3) == "llm"
 
 
 def test_held_queue_yields_once_drained_and_another_has_work():
-    pending = {"llm": 0, "image": 5, "mesh": 0}
-    idle_ticks = {"llm": 3, "image": 0, "mesh": 0}
+    pending = {"llm": 0, "image": 5}
+    idle_ticks = {"llm": 3, "image": 0}
     assert local_gpu.choose_action("llm", pending, idle_ticks, 3) == "image"
 
 
 def test_held_queue_drained_and_nothing_else_pending_releases_the_card():
     # idle-exit timing is handled by the caller (auto loop); the decision function just
     # reports "nothing wants the card"
-    pending = {"llm": 0, "image": 0, "mesh": 0}
-    idle_ticks = {"llm": 3, "image": 0, "mesh": 0}
+    pending = {"llm": 0, "image": 0}
+    idle_ticks = {"llm": 3, "image": 0}
     assert local_gpu.choose_action("llm", pending, idle_ticks, 3) is None
 
 
@@ -82,26 +82,6 @@ def test_llm_leg_serves_the_settings_model_on_basalt_with_vision_and_its_flags(m
     config.unlink()
     with __import__("pytest").raises(SystemExit):
         local_gpu._leg("llm")
-
-
-def test_mesh_leg_ready_waits_for_warm(monkeypatch):
-    import io
-    import json
-
-    class _Resp(io.BytesIO):
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-    answers = iter([{"status": "ok", "warm": False}, {"status": "ok", "warm": True}])
-    monkeypatch.setattr(
-        "urllib.request.urlopen",
-        lambda url, timeout=2.0: _Resp(json.dumps(next(answers)).encode()),
-    )
-    assert local_gpu._ready("mesh", "http://x/health") is False
-    assert local_gpu._ready("mesh", "http://x/health") is True
 
 
 def test_a_handed_over_worker_is_given_time_to_finish_its_job(monkeypatch):

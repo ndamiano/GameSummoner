@@ -16,6 +16,8 @@ _TXT2IMG_TILE_WORKFLOW_PATH = _WORKFLOWS_DIR / "txt2img_tile.json"
 _IMG2IMG_TILE_WORKFLOW_PATH = _WORKFLOWS_DIR / "img2img_tile.json"
 _TXT2IMG_SUBJECT_WORKFLOW_PATH = _WORKFLOWS_DIR / "txt2img_subject.json"
 _IMG2IMG_SUBJECT_WORKFLOW_PATH = _WORKFLOWS_DIR / "img2img_subject.json"
+_IMG2MESH_WORKFLOW_PATH = _WORKFLOWS_DIR / "img2mesh.json"
+_MESH_SAMPLERS = ("ks1", "ks2", "ks4")
 
 
 def _build_tile_workflow(base_workflow: dict, positive: str, negative: str) -> dict:
@@ -148,6 +150,15 @@ def build_image_payload(description: str, kind: str = "sprite",
     wf = build_img2img_job(description, init_name, kind, denoise)["workflow_override"]
     return {"kind": "comfy_image", "workflow": wf,
             "uploads": [{"name": init_name, "b64": init_image_b64}]}
+
+
+def build_mesh_payload(image_b64: str, seed: int = 42) -> Dict[str, Any]:
+    name = f"subject_{uuid.uuid4().hex}.png"
+    wf = _load_workflow(_IMG2MESH_WORKFLOW_PATH)
+    wf["li"]["inputs"]["image"] = name
+    for node in _MESH_SAMPLERS:
+        wf[node]["inputs"]["seed"] = seed
+    return {"kind": "comfy_mesh", "workflow": wf, "uploads": [{"name": name, "b64": image_b64}]}
 
 
 def _load_workflow(path: Path) -> dict:

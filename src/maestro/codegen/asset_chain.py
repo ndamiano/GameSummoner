@@ -33,6 +33,7 @@ from maestro.codegen.staging import stage_for_play
 from maestro.state import RunState
 from tools.build_events import _emit
 from tools.quilting import quilt_tile
+from tools.comfyui_tools import build_mesh_payload
 from tools.safety import SafetyViolation, log_violation
 
 logger = logging.getLogger(__name__)
@@ -63,17 +64,14 @@ def _admit(md: Dict, entry: Optional[Dict]) -> Optional[str]:
 
 
 def _mesh_from_image(md: Dict, result: Dict) -> Optional[Dict]:
-    """The image a TRELLIS job turns into a GLB. The PNG rides the payload as base64 because the
-    worker is remote and cannot read the control plane's blob dir."""
     src = _admit(md, _first_image(result))
     if src is None:
         return None
     data = Path(src).read_bytes()
     # keep the mesh's source render: an img2img regenerate needs an image to seed, and a GLB isn't one
     asset_path(md["run_id"], md["asset_id"], "src.png").write_bytes(data)
-    b64 = base64.b64encode(data).decode("ascii")
-    return {"queue": "mesh",
-            "payload": {"kind": "trellis_mesh", "image_b64": b64},
+    return {"queue": "image",
+            "payload": build_mesh_payload(base64.b64encode(data).decode("ascii")),
             "metadata": {**md, "then": {"operations": ["decimate"],
                                         "finalize": md["then"]["finalize"]}}}
 

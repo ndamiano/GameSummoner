@@ -1,6 +1,4 @@
-"""Image-to-3D, through the worker-pull queue, via TRELLIS2.
-Each image is its own `mesh` job, fanned out at once; `targets` decimates locally per stem.
-"""
+"""Image-to-3D: each image is its own TRELLIS.2 job on the ComfyUI box, fanned out at once."""
 
 from __future__ import annotations
 
@@ -14,6 +12,7 @@ from typing import Sequence
 
 from maestro.worldgen import WORLD_JOB_TIMEOUT
 from maestro.worldgen.seed import seed_for
+from tools.comfyui_tools import build_mesh_payload
 from workqueue.client import run_job
 
 DECIMATION_TARGET = 50_000
@@ -93,10 +92,8 @@ class MeshModel:
         return results
 
     def _one(self, image: Path, out_dir: Path, target: int, seed: int) -> Path | None:
-        payload = {"kind": "trellis_mesh",
-                   "image_b64": base64.b64encode(image.read_bytes()).decode("ascii"),
-                   "seed": seed}
-        job = run_job("mesh", payload, timeout_seconds=self.timeout)
+        payload = build_mesh_payload(base64.b64encode(image.read_bytes()).decode("ascii"), seed)
+        job = run_job("image", payload, timeout_seconds=self.timeout)
         if job.get("status") != "done":
             raise MeshModelError(job.get("error") or "mesh job failed")
         result = job.get("result") or {}

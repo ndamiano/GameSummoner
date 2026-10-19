@@ -30,7 +30,7 @@ def _image_job(batch: str, asset_id: str = "goblin", game_id: str = "g1") -> str
                   "then": {"enqueue": "mesh_from_image", "finalize": "assets"}})
 
 
-_MESH = {"queue": "mesh", "payload": {"kind": "trellis_mesh", "image_b64": "x"},
+_MESH = {"queue": "image", "payload": {"kind": "comfy_mesh"},
          "metadata": {"then": {"operations": ["decimate"], "finalize": "assets"}}}
 
 
@@ -82,14 +82,14 @@ def test_a_continuation_inherits_its_parent_game_batch_and_build():
     out = _complete(parent, continuation=_MESH)
     child = jobs.get_job(out["continuation_id"])
     assert (child["game_id"], child["build_id"], child["batch_id"]) == ("g1", "bld1", "b1")
-    assert child["queue"] == "mesh"
+    assert child["queue"] == "image"
 
 
 def test_a_continuations_cost_debits_the_parents_game():
     _game()
     out = _complete(_image_job("b1"), continuation=_MESH)
     before = games.game("g1")["spent_micros"]
-    jobs.claim_job("mesh", "w2", lease_seconds=60)
+    jobs.claim_job("image", "w2", lease_seconds=60)
     jobs.complete_job(out["continuation_id"], "w2", {"glb_file": "/x.glb"}, None, 30.0)
     assert games.game("g1")["spent_micros"] == before + calculate_job_cost(30.0, RATE)
 
@@ -142,15 +142,15 @@ def test_a_lapsed_lease_is_requeued_without_any_claim_traffic():
     """claim_job requeues these too, but only when a claim arrives. A queue that goes quiet would
     otherwise hold a dead job and its reservation forever."""
     _game()
-    job = jobs.enqueue_job("mesh", {"k": 1}, game_id="g1", build_id="b1")
-    jobs.claim_job("mesh", "w1", lease_seconds=-1)
+    job = jobs.enqueue_job("image", {"k": 1}, game_id="g1", build_id="b1")
+    jobs.claim_job("image", "w1", lease_seconds=-1)
     assert jobs.requeue_lapsed_leases() == 1
     assert jobs.get_job(job)["status"] == "pending"
 
 
 def test_stale_pending_jobs_fail_and_release_their_reservation():
     _game()
-    jobs.enqueue_job("mesh", {"k": 1}, game_id="g1", build_id="b1")
+    jobs.enqueue_job("image", {"k": 1}, game_id="g1", build_id="b1")
     reserved = games.compute_remaining("g1")
     failed = jobs.fail_stale_pending(-1.0)
     assert len(failed) == 1

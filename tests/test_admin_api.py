@@ -45,15 +45,15 @@ def test_next_lists_pending_jobs_in_claim_order_with_their_wait(app_client):
     games.create_game("g1", "u1")
     games.charge_game("g1", 1, 1_000_000)
     build = games.create_build("g1")
-    first = jobs.enqueue_job("mesh", {}, game_id="g1", build_id=build)
-    second = jobs.enqueue_job("mesh", {}, game_id="g1", build_id="b1")
+    first = jobs.enqueue_job("image", {}, game_id="g1", build_id=build)
+    second = jobs.enqueue_job("image", {}, game_id="g1", build_id="b1")
 
-    mesh, totals = _queue(app_client, "mesh")
-    assert [j["id"] for j in mesh["next"]] == [first, second]
-    assert mesh["next"][0]["game_id"] == "g1"
-    assert mesh["next"][0]["build_id"] == build
-    assert 0 <= mesh["next"][0]["waiting_seconds"] < 5
-    assert mesh["next"][0]["est_seconds"] == QUEUE_SECONDS_ESTIMATES["mesh"]
+    image, totals = _queue(app_client, "image")
+    assert [j["id"] for j in image["next"]] == [first, second]
+    assert image["next"][0]["game_id"] == "g1"
+    assert image["next"][0]["build_id"] == build
+    assert 0 <= image["next"][0]["waiting_seconds"] < 5
+    assert image["next"][0]["est_seconds"] == QUEUE_SECONDS_ESTIMATES["image"]
     assert (totals["pending"], totals["claimed"]) == (2, 0)
 
 
@@ -69,25 +69,25 @@ def test_next_is_capped_at_ten(app_client):
 def test_workers_report_state_and_the_job_they_hold(app_client):
     games.create_game("g1", "u1")
     games.charge_game("g1", 1, 1_000_000)
-    jid = jobs.enqueue_job("mesh", {}, game_id="g1", build_id="b1")
-    workers.worker_created("busy", "p1", "mesh", "BIG", 0.99)
-    workers.worker_created("idle", None, "mesh", "NVIDIA GeForce RTX 5090", 0.0)
-    workers.worker_seen("busy", "mesh", gpu_type="BIG", source="runpod")
-    workers.worker_seen("idle", "mesh", gpu_type="NVIDIA GeForce RTX 5090", source="local")
-    jobs.claim_job("mesh", "busy", 60)
+    jid = jobs.enqueue_job("image", {}, game_id="g1", build_id="b1")
+    workers.worker_created("busy", "p1", "image", "BIG", 0.99)
+    workers.worker_created("idle", None, "image", "NVIDIA GeForce RTX 5090", 0.0)
+    workers.worker_seen("busy", "image", gpu_type="BIG", source="runpod")
+    workers.worker_seen("idle", "image", gpu_type="NVIDIA GeForce RTX 5090", source="local")
+    jobs.claim_job("image", "busy", 60)
 
-    mesh, totals = _queue(app_client, "mesh")
-    by_id = {w["id"]: w for w in mesh["workers"]}
+    image, totals = _queue(app_client, "image")
+    by_id = {w["id"]: w for w in image["workers"]}
     assert by_id["busy"]["state"] == "busy"
     assert by_id["busy"]["pod_id"] == "p1"
     assert by_id["busy"]["job"]["id"] == jid
     assert by_id["busy"]["job"]["game_id"] == "g1"
     assert 0 <= by_id["busy"]["job"]["running_seconds"] < 5
-    assert by_id["busy"]["job"]["est_seconds"] == QUEUE_SECONDS_ESTIMATES["mesh"]
+    assert by_id["busy"]["job"]["est_seconds"] == QUEUE_SECONDS_ESTIMATES["image"]
     assert by_id["idle"]["state"] == "idle"
     assert by_id["idle"]["job"] is None
-    assert (mesh["workers_live"], mesh["claimed"], mesh["pending"]) == (2, 1, 0)
-    assert mesh["next"] == []
+    assert (image["workers_live"], image["claimed"], image["pending"]) == (2, 1, 0)
+    assert image["next"] == []
     assert totals["workers_live"] == 2
 
 

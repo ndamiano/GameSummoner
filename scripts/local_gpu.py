@@ -36,21 +36,15 @@ IMAGE_PORT = 8700
 def _worker_python(queue: str) -> str:
     if queue == "image" and COMFY_PYTHON.exists():
         return str(COMFY_PYTHON)
-    if queue == "mesh" and TRELLIS_PYTHON.exists():
-        return str(TRELLIS_PYTHON)
     return sys.executable
-TRELLIS_PYTHON = Path(os.environ.get("TRELLIS_PYTHON",
-                                     str(Path.home() / "cube3d-lab/trellis2-venv/bin/python")))
-TRELLIS_REPO = Path(os.environ.get("TRELLIS_REPO", str(Path.home() / "cube3d-lab/trellis2")))
-TRELLIS_WEIGHTS = Path(os.environ.get("TRELLIS_WEIGHTS", str(Path.home() / "cube3d-lab/trellis2-weights")))
 
 IDLE_TICKS = 3          # empty polls before a queue counts as drained; a continuation
                         # is enqueued by the completion that just finished, so "empty
                         # once" is not empty
 POLL_SECONDS = 2.0
 
-QUEUES = ["decide", "llm", "image", "mesh"]
-PRIORITY = {"decide": 0, "llm": 1, "image": 2, "mesh": 3}
+QUEUES = ["decide", "llm", "image"]
+PRIORITY = {"decide": 0, "llm": 1, "image": 2}
 # A pending job the control plane's reaper will fail before the held queue drains has to be served
 # first: one card, a build whose turns re-fill the llm queue as fast as it empties, and five
 # sheets waited 30 minutes behind it for a worker that never came (2026-09-04, two of five lost).
@@ -104,16 +98,6 @@ def _leg(queue: str) -> dict:
             "cwd": str(COMFY_DIR),
             "env": {},
         }
-    if queue == "mesh":
-        return {
-            "port": 8189,
-            "ready": "http://127.0.0.1:8189/health",
-            "argv": [str(TRELLIS_PYTHON), str(IMAGES_DIR / "engines" / "trellis" / "trellis_server.py"),
-                     "--repo", str(TRELLIS_REPO), "--weights", str(TRELLIS_WEIGHTS),
-                     "--host", "127.0.0.1", "--port", "8189", "--stage-dir", ""],
-            "cwd": None,
-            "env": {},
-        }
     raise SystemExit(f"unknown queue {queue!r}")
 
 
@@ -136,17 +120,6 @@ def _ready(queue: str, url: str, timeout: float = 2.0) -> bool:
             body = resp.read()
     except (urllib.error.URLError, OSError):
         return False
-    if queue == "mesh":
-        # /health answers 200 the instant uvicorn is up, long before the background preload
-        # thread finishes loading and warming the pipeline. A worker that starts on that alone
-        # forwards a real job while the warmup's own generate() is still running — two
-        # concurrent calls into TRELLIS's non-thread-safe CUDA extensions (CuMesh/o_voxel),
-        # which killed the server process outright with no traceback. Wait for `warm`.
-        try:
-            data = json.loads(body)
-        except json.JSONDecodeError:
-            return False
-        return bool(data.get("warm"))
     if queue != "llm":
         return True
     try:
@@ -203,8 +176,6 @@ def _stop(name: str, process: subprocess.Popen, grace: float = 25) -> None:
     if process.poll() is not None:
         return
     print(f"[{name}] stopping", flush=True)
-    # the whole group: ComfyUI and the trellis server both fork children that keep
-    # the card if only the parent is signalled
     try:
         os.killpg(os.getpgid(process.pid), signal.SIGTERM)
     except ProcessLookupError:
@@ -420,7 +391,7 @@ def auto(idle_exit: Optional[float], ready_timeout: float) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("queues", nargs="+", help="decide, llm, image, mesh, all, or auto")
+    parser.add_argument("queues", nargs="+", help="decide, llm, image, all, or auto")
     parser.add_argument("--keep", action="store_true",
                         help="leave the model server up after the queue empties")
     parser.add_argument("--ready-timeout", type=float, default=300.0)

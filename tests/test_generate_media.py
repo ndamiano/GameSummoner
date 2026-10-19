@@ -6,6 +6,7 @@ exhausted budget all come back as text instead, because a build that cannot have
 to draw one rather than left waiting for a file that is never coming.
 """
 
+import base64
 import json
 
 import pytest
@@ -280,8 +281,6 @@ def _jobs(queue):
 
 
 def test_a_top_up_resumes_a_mesh_from_the_source_render_it_already_has(run_dir):
-    """A mesh is ComfyUI and then TRELLIS, and one GPU holds one of them, so a top-up that always
-    restarted at the image leg could never reach the second half on a single-card box."""
     request_media(RUN, run_dir, "b1", "hut", "a thatched hut", STYLE, kind="mesh")
     src = assets.asset_path(RUN, "hut", "src.png")
     src.parent.mkdir(parents=True, exist_ok=True)
@@ -289,11 +288,11 @@ def test_a_top_up_resumes_a_mesh_from_the_source_render_it_already_has(run_dir):
 
     assets.start_from_manifest(RUN, run_dir, "b1")
 
-    mesh_jobs = _jobs("mesh")
-    assert len(mesh_jobs) == 1, "the top-up went to TRELLIS, not back to ComfyUI"
-    assert mesh_jobs[0]["payload"]["kind"] == "trellis_mesh"
-    assert mesh_jobs[0]["metadata"]["then"]["operations"] == ["decimate"]
-    assert len(_jobs("image")) == 1, "no second image render was paid for"
+    by_kind = {j["payload"]["kind"]: j for j in _jobs("image")}
+    assert sorted(by_kind) == ["comfy_image", "comfy_mesh"], "no second image render was paid for"
+    top_up = by_kind["comfy_mesh"]
+    assert top_up["metadata"]["then"]["operations"] == ["decimate"]
+    assert base64.b64decode(top_up["payload"]["uploads"][0]["b64"]) == src.read_bytes()
 
 
 def test_a_mesh_with_no_source_render_still_starts_at_the_image(run_dir):
@@ -301,7 +300,7 @@ def test_a_mesh_with_no_source_render_still_starts_at_the_image(run_dir):
 
     assets.start_from_manifest(RUN, run_dir, "b1")
 
-    assert len(_jobs("image")) == 2 and _jobs("mesh") == []
+    assert [j["payload"]["kind"] for j in _jobs("image")] == ["comfy_image", "comfy_image"]
 
 
 # ── The structured ask: subject + style + details, prose composed here ─────────────────────

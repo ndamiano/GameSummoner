@@ -154,11 +154,11 @@ def test_stop_releases_the_reservation(tmp_runs, quiet):
 def _art_jobs(run_id, bid):
     return [jobs.enqueue_job(q, {}, game_id=run_id, build_id=bid, batch_id="batch1",
                               metadata={"run_id": run_id, "asset_id": f"a{i}",
-                                        "then": {"enqueue": "mesh", "finalize": "assets"}})
-            for i, q in enumerate(("image", "mesh"))]
+                                        "then": {"enqueue": "mesh_from_image", "finalize": "assets"}})
+            for i, q in enumerate(("image", "image"))]
 
 
-def test_stop_cancels_pending_and_claimed_art_on_every_queue(tmp_runs, quiet, monkeypatch):
+def test_stop_cancels_pending_and_claimed_art(tmp_runs, quiet, monkeypatch):
     run_id = _game(tmp_runs)
     bid = games.create_build(run_id, kind="art_build")
     games.build_started(bid)
@@ -178,7 +178,7 @@ def test_a_cancelled_art_jobs_late_completion_enqueues_nothing(tmp_runs, quiet):
     jobs.claim_job("image", "w1", 600)
     build_chain.stop(run_id)
     outcome = jobs.complete_job(image, "w1", {"images": [{"file": "x.png"}]}, None, 5.0,
-                                 continuation={"queue": "mesh", "payload": {}})
+                                 continuation={"queue": "image", "payload": {}})
     assert outcome is None
     assert all(j["status"] == "failed" for j in jobs.batch_jobs("batch1"))
 
@@ -189,7 +189,7 @@ def test_a_thread_still_working_for_a_stopped_build_cannot_enqueue(tmp_runs, qui
     run_id = _game(tmp_runs)
     bid = games.create_build(run_id, kind="build")
     games.build_started(bid)
-    jobs.enqueue_job("mesh", {}, game_id=run_id, build_id=bid)
+    jobs.enqueue_job("image", {}, game_id=run_id, build_id=bid)
     build_chain.stop(run_id)
     with pytest.raises(errors.BuildEnded):
         jobs.enqueue_job("image", {}, game_id=run_id, build_id=bid)

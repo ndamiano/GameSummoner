@@ -144,9 +144,9 @@ def test_claim_execute_complete_over_http(client):
 def test_complete_offloads_the_glb_to_the_blob_dir(client, tmp_path, monkeypatch):
     monkeypatch.setattr(wq, "_blob_dir", lambda: tmp_path / "blobs")
 
-    workers.worker_created("w1", None, "mesh", None, RATE)
-    jid = jobs.enqueue_job("mesh", {"kind": "trellis_mesh"})
-    client.post("/worker/claim", json={"queue": "mesh", "worker_id": "w1"}, headers=_hdr())
+    workers.worker_created("w1", None, "image", None, RATE)
+    jid = jobs.enqueue_job("image", {"kind": "comfy_mesh"})
+    client.post("/worker/claim", json={"queue": "image", "worker_id": "w1"}, headers=_hdr())
     glb = b"glTF-binary-bytes"
     r = client.post("/worker/complete", json={
         "job_id": jid, "worker_id": "w1",
@@ -163,8 +163,8 @@ def test_complete_offloads_the_glb_to_the_blob_dir(client, tmp_path, monkeypatch
 def test_stale_glb_completion_removes_its_blob(client, tmp_path, monkeypatch):
     monkeypatch.setattr(wq, "_blob_dir", lambda: tmp_path / "blobs")
 
-    jid = jobs.enqueue_job("mesh", {"kind": "trellis_mesh"})
-    client.post("/worker/claim", json={"queue": "mesh", "worker_id": "w1"}, headers=_hdr())
+    jid = jobs.enqueue_job("image", {"kind": "comfy_mesh"})
+    client.post("/worker/claim", json={"queue": "image", "worker_id": "w1"}, headers=_hdr())
     r = client.post("/worker/complete", json={
         "job_id": jid, "worker_id": "not-the-claimant",
         "result": {"glb_b64": base64.b64encode(b"x").decode("ascii")}}, headers=_hdr())

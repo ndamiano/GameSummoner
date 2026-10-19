@@ -209,10 +209,10 @@ def test_detail_reports_remaining_net_of_queued_work(client):
     user, headers = _user()
     run_id = _make_game(user.id, {"request": "make a moon miner", "title": "Moon Miner"})
     games.charge_game(run_id, 1, 1_000_000)
-    jobs.enqueue_job("mesh", {}, game_id=run_id, build_id="b1")
+    jobs.enqueue_job("image", {}, game_id=run_id, build_id="b1")
 
     detail = client.get(f"/api/games/{run_id}", headers=headers).json()
-    assert detail["budget_pct_remaining"] == (1_000_000 - QUEUE_MICRO_ESTIMATES["mesh"]) / 1_000_000
+    assert detail["budget_pct_remaining"] == (1_000_000 - QUEUE_MICRO_ESTIMATES["image"]) / 1_000_000
 
 
 def test_events_endpoint_replays_the_log(client):

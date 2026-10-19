@@ -8,7 +8,6 @@ MICRO = 1_000_000
 QUEUE_SECONDS_ESTIMATES = {
     "llm":   31,
     "image": 33,
-    "mesh":  48,
     "decide": 20,
 }
 
@@ -16,7 +15,6 @@ QUEUE_SECONDS_ESTIMATES = {
 QUEUE_USD_PER_HOUR = {
     "llm":   2.21,   # RTX PRO 6000 Blackwell
     "image": 1.01,   # RTX 5090
-    "mesh":  1.01,   # RTX 5090
     "decide": 2.21,  # RTX PRO 6000 Blackwell
 }
 

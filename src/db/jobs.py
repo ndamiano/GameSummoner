@@ -174,7 +174,7 @@ def elide_payload(queue: str, payload: Dict) -> Dict:
                     for m in turns if m.get("role") != "system"),
                 "reasoning": reasoning,
                 "max_tokens": body.get("max_output_tokens") or body.get("max_tokens")}
-    if queue == "image":
+    if queue == "image" and payload.get("kind") == "comfy_image":
         wf = payload.get("workflow") or {}
         node = next((wf[k] for k in ("p", "6") if k in wf), {})
         return {"prompt": (node.get("inputs") or {}).get("text") or "",
