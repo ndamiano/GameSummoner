@@ -39,12 +39,15 @@ fi
 "$home/venv-gpu/bin/pip" install -q -r "$images/local/requirements.txt"
 
 settings="$root/src/config/settings.json"
-[ -f "$settings" ] || cp "$root/src/config/settings.example.json" "$settings"
-"$root/venv/bin/python" - "$settings" "$swap" "$llm" "$decide" "$comfy" <<'PY'
+fresh=0
+[ -f "$settings" ] || { cp "$root/src/config/settings.example.json" "$settings"; fresh=1; }
+"$root/venv/bin/python" - "$settings" "$swap" "$llm" "$decide" "$comfy" "$fresh" "$home/runs" <<'PY'
 import json, sys
-path, url, llm, decide, comfy = sys.argv[1:]
+path, url, llm, decide, comfy, fresh, runs = sys.argv[1:]
 d = json.load(open(path))
 d.setdefault("llm", {})["model"] = llm
+if fresh == "1":
+    d["working_directory"] = runs
 d.setdefault("local", {})["llama_swap"] = {"url": url, "decide": decide, "comfy": comfy}
 json.dump(d, open(path, "w"), indent=2)
 open(path, "a").write("\n")
