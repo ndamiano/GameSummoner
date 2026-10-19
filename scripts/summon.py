@@ -40,6 +40,37 @@ def _spawn(name: str, argv: list) -> subprocess.Popen:
                             start_new_session=True)
 
 
+_BUSY = """
+import sys
+from db import connection
+with connection.platform_db() as c:
+    print(c.execute(
+        "SELECT (SELECT COUNT(*) FROM jobs WHERE game_id = ? AND status IN ('pending', 'claimed'))"
+        " + (SELECT COUNT(*) FROM builds WHERE game_id = ? AND status IN ('queued', 'running'))",
+        (sys.argv[1], sys.argv[1])).fetchone()[0])
+"""
+
+
+def _busy(run_id: str) -> bool:
+    out = subprocess.run([PYTHON, "-c", _BUSY, run_id], cwd=ROOT / "src", capture_output=True,
+                         text=True, check=True)
+    return int(out.stdout.strip()) > 0
+
+
+def _settle(run_id: str) -> None:
+    quiet = 0
+    told = False
+    while quiet < 12:
+        if _busy(run_id):
+            quiet = 0
+            if not told:
+                print("[summon] play-testing the game and fixing what it finds...", flush=True)
+                told = True
+        else:
+            quiet += 1
+        time.sleep(5)
+
+
 def _ensure_account() -> None:
     code = ("from auth import store; import secrets; "
             "store.list_users() or store.create_user('local', secrets.token_urlsafe(24))")
@@ -50,7 +81,7 @@ def _build(request: str) -> tuple:
     proc = subprocess.Popen([PYTHON, "-u", "-m", "maestro.codegen.run", request], cwd=ROOT / "src",
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     LOGS.mkdir(parents=True, exist_ok=True)
-    game, ok = None, False
+    game, ok, run_id = None, False, None
     with open(LOGS / "build.log", "a") as log:
         for line in proc.stdout:
             log.write(line)
@@ -59,12 +90,14 @@ def _build(request: str) -> tuple:
                 print(f"\r{line.strip()}", end="", flush=True)
             elif line.startswith(("run:", "design", "building", "ok=", "summary:", "game:")):
                 print(("\n" if line.startswith("ok=") else "") + line.rstrip()[:160], flush=True)
+            if line.startswith("run:"):
+                run_id = line.split(":", 1)[1].strip()
             if line.startswith("game:"):
                 game = Path(line.split(":", 1)[1].strip())
             if line.startswith("ok=True"):
                 ok = True
     proc.wait()
-    return ok, game
+    return ok, game, run_id
 
 
 def _serve(game: Path, port: int) -> None:
@@ -90,7 +123,9 @@ def summon(request: str, port: int) -> int:
         if not _auto_running():
             started.append(_spawn("local-gpu", AUTO_ARGV))
         _ensure_account()
-        ok, game = _build(request)
+        ok, game, run_id = _build(request)
+        if run_id:
+            _settle(run_id)
         if game is None:
             print(f"[summon] the build produced no game — see {LOGS / 'build.log'}")
             return 1

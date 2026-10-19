@@ -31,9 +31,13 @@ SAFETY_MODEL_DIR = os.environ.get("SAFETY_MODEL_DIR", str(Path.home() / "comfy-m
 IMAGES_DIR = Path(os.environ.get("IMAGES_REPO_DIR", str(Path.home() / "Documents/gamesummoner-images")))
 WORKER_DIR = Path(os.environ.get("WORKER_REPO_DIR", str(Path.home() / "Documents/gamesummoner-workers")))
 IMAGE_PORT = 8700
+GPU_PYTHON = Path(os.environ.get("GAMESUMMONER_GPU_PYTHON",
+                                 str(Path.home() / ".gamesummoner/venv-gpu/bin/python")))
 
 
 def _worker_python(queue: str) -> str:
+    if _llama_swap():
+        return str(GPU_PYTHON)
     if queue == "comfy" and COMFY_PYTHON.exists():
         return str(COMFY_PYTHON)
     return sys.executable
@@ -68,7 +72,23 @@ def _basalt_config() -> Path:
     raise SystemExit(f"no basalt config at {BASALT_CONFIG}")
 
 
+def _llama_swap() -> dict:
+    return ((_settings().get("local") or {}).get("llama_swap")) or {}
+
+
+def _swap_leg(queue: str, swap: dict) -> dict:
+    url = swap["url"].rstrip("/")
+    engines = {"llm": url, "decide": f"{url}/upstream/{swap['decide']}",
+               "comfy": f"{url}/upstream/{swap['comfy']}"}
+    return {"port": None, "ready": f"{url}/v1/models", "argv": None, "cwd": None, "env": {},
+            "engine": engines[queue],
+            "image_args": ["--jev-dir", swap["jev_dir"]] if queue == "decide" else []}
+
+
 def _leg(queue: str) -> dict:
+    swap = _llama_swap()
+    if swap:
+        return _swap_leg(queue, swap)
     if queue == "decide":
         return {
             "port": IMAGE_PORT,
@@ -139,8 +159,9 @@ def _spawn(name: str, argv: list, cwd, env: dict) -> subprocess.Popen:
 
 
 def _spawn_image(queue: str, leg: dict) -> subprocess.Popen:
+    engine = leg.get("engine") or f"http://127.0.0.1:{leg['port']}"
     argv = [_worker_python(queue), "-m", f"local.{queue}.server", "--image-id", "local",
-            "--engine-url", f"http://127.0.0.1:{leg['port']}", "--port", str(IMAGE_PORT)]
+            "--engine-url", engine, "--port", str(IMAGE_PORT), *leg.get("image_args", [])]
     return _spawn(f"{queue}-image", argv, str(IMAGES_DIR),
                   {"PYTHONPATH": str(IMAGES_DIR), "SAFETY_MODEL_DIR": SAFETY_MODEL_DIR})
 
@@ -167,7 +188,7 @@ def _worker_env(queue: str) -> Path:
 def _spawn_worker(queue: str) -> subprocess.Popen:
     env_file = _worker_env(queue)
     return _spawn(f"{queue}-worker",
-                  [sys.executable, "-m", "gamesummoner_worker", "--env-file", str(env_file),
+                  [_worker_python("llm"), "-m", "gamesummoner_worker", "--env-file", str(env_file),
                    "--image", f"http://127.0.0.1:{IMAGE_PORT}"],
                   None, {"PYTHONPATH": str(WORKER_DIR / "src")})
 
@@ -231,6 +252,8 @@ def _oldest_wait(queue: str) -> float:
 
 def drain(queue: str, *, keep: bool, ready_timeout: float) -> None:
     leg = _leg(queue)
+    if leg["argv"] is None:
+        raise SystemExit("llama-swap serves the models: run `auto`")
     if _up(leg["ready"]):
         raise SystemExit(
             f"[{queue}] something is already serving port {leg['port']}. Stop it first — this "
@@ -335,7 +358,7 @@ def auto(idle_exit: Optional[float], ready_timeout: float) -> None:
             # Someone else's server on the port is the server to use, not a reason to stop: auto
             # would otherwise abandon a queue it cannot start and exit, and the card it was holding
             # goes with it. It stays THEIRS — nothing here stops what it did not start.
-            print(f"[{queue}] using the server already on port {leg['port']}", flush=True)
+            print(f"[{queue}] using the server already at {leg['ready']}", flush=True)
             server = None
         else:
             server = _spawn(f"{queue}-server", leg["argv"], leg["cwd"], leg["env"])

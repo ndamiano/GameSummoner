@@ -8,16 +8,20 @@ handle on why we made the choices we've made.
 ## One command
 
 ```bash
-./install.sh
+LLAMA_SWAP_URL=http://localhost:8080 JEV_DIR=~/models/jev ./install.sh
 GameSummoner summon "A game about frogs eating bugs"
 ```
 
-`install.sh` stops on anything missing, and everything it checks for is required: Python 3.12, Node
-20, an NVIDIA driver, Docker (the decide box), Basalt with its model config, ComfyUI v0.39.2, and
-the [`gamesummoner-images`](https://github.com/ndamiano/gamesummoner-images) and
-[`gamesummoner-workers`](https://github.com/ndamiano/gamesummoner-workers) checkouts. `summon`
-starts the control plane and `scripts/local_gpu.py auto` if they are not already up, builds the
-game, and serves it until Ctrl-C, stopping whatever it started. Logs go to `~/.gamesummoner/logs/`.
+Locally, GameSummoner expects [llama-swap](https://github.com/mostlygeek/llama-swap) serving three
+models: a tool-calling LLM, the JEV-27B-VL decision model, and ComfyUI. `docs/llama-swap.md` lists
+exactly what each must be, with an example config. `install.sh` checks every requirement and
+stops on anything missing (Python 3.12, Node 20, git, and the three models), then installs.
+`summon` starts the control plane and the queue workers, builds the game, waits for its play-test
+fixes, and serves it until Ctrl-C. Logs go to `~/.gamesummoner/logs/`.
+
+We build and test on one RTX 5090 with Qwen3.8 Flash-Next. Other hardware and models run, with no
+promise about the games they make; [gamesummoner.com](https://gamesummoner.com) runs the full-size
+models.
 
 ## Getting Started
 
