@@ -59,14 +59,15 @@ control over the model; the user types a game idea and gets a game. See [License
   (NVFP4 of [Qwen/Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B))
 - License: [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0), adapter and base
 
-A System One decision model: a LoRA and a readout head on Qwen3.8-27B that turn a state, a
-question and its options into calibrated probabilities. The design stage asks it every decision in
-`prompts/design/decisions.json` as one `decide` job. Served by stock SGLang 0.5.21 with the LoRA
-and hidden states returned; the head is applied over them by `contract/decide.py` in
-gamesummoner-images.
+A System One decision model: a LoRA on Qwen3.8-27B, its decision head an `lm_head` LoRA, that turns
+a state, a question and its options into calibrated probabilities. The design stage asks it every
+decision in `prompts/design/decisions.json` as one `decide` job. Served by stock vLLM 0.32.0 with
+`adapter_vllm` as the `jev-decision` LoRA; `contract/decide.py` in gamesummoner-images reads each
+decision from the option tokens' logprobs over the OpenAI completions API and applies JEV's bias
+and temperature (`engines/jev/head/`).
 
-Requires: one 5090-class card (`local/decide/`; `aws/decide/` on a g7e.2xlarge).
-`--max-running-requests 1`: two co-batched sequences moved a probability by up to 0.05.
+Requires: one 5090-class card (`local/decide/`, `runpod/decide/`; `aws/decide/` on a g7e.2xlarge).
+One prompt per request: prompts sharing a batch moved a probability by up to 0.085.
 
 ## Image
 
@@ -207,7 +208,7 @@ public code.
 |---|---|---|
 | [ComfyUI](https://github.com/Comfy-Org/ComfyUI) v0.39.2 | the comfy queue: images and TRELLIS.2 | GPL-3.0 |
 | [ComfyUI-RMBG](https://github.com/1038lab/ComfyUI-RMBG) 3.0.0 | the BiRefNet matte inside ComfyUI | GPL-3.0 |
-| [SGLang](https://github.com/sgl-project/sglang) 0.5.21 | the decide queue | Apache 2.0 |
+| [vLLM](https://github.com/vllm-project/vllm) 0.32.0 | the decide queue | Apache 2.0 |
 | [Basalt](https://github.com/ndamiano/basalt) `gamesummoner-v1` | the llm queue, in production and on a local 5090 | MIT |
 
 ## License obligations
