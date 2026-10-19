@@ -11,8 +11,8 @@ if it's gibberish. Of the two bars, GameSummoner has met the "any game" portion,
 researching and trying to improve the quality that GameSummoner provides.
 
 The pipeline runs on rented cards with open-weight well licensed models. The current cards and
-models are RTX PRO 6000 with Qwen3.8 Flash-Next in production, and 5090 with Qwen3.8 27B for local
-testing.
+models are RTX PRO 6000 with Qwen3.8 Flash-Next in production, and 5090 with Qwen3.8 Flash-Next
+(IQ3_S, served by Basalt) for local testing.
 
 This file exists to describe how we work on GameSummoner, and how to make changes to it.
 
