@@ -9,7 +9,6 @@ QUEUE_SECONDS_ESTIMATES = {
     "llm":   31,
     "image": 33,
     "mesh":  48,
-    "video": 166,
     "decide": 20,
 }
 
@@ -18,7 +17,6 @@ QUEUE_USD_PER_HOUR = {
     "llm":   2.21,   # RTX PRO 6000 Blackwell
     "image": 1.01,   # RTX 5090
     "mesh":  1.01,   # RTX 5090
-    "video": 1.01,   # RTX 5090
     "decide": 2.21,  # RTX PRO 6000 Blackwell
 }
 

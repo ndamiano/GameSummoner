@@ -1,16 +1,11 @@
-"""Image, mesh and anim job PAYLOADS: this side resolves a workflow and screens the prompt, the
-worker next to the GPU runs it.
-
-Nothing here enqueues or waits — a caller lands the payload on the `image` queue itself, so every
-producer of GPU work passes through one place that can meter it.
-"""
+"""Image and mesh job payloads: a resolved workflow and a screened prompt for the worker to run."""
 
 import copy
 import json
 import logging
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional
 
 from tools.safety import log_violation, screen_image_prompt
 
@@ -21,7 +16,6 @@ _TXT2IMG_TILE_WORKFLOW_PATH = _WORKFLOWS_DIR / "txt2img_tile.json"
 _IMG2IMG_TILE_WORKFLOW_PATH = _WORKFLOWS_DIR / "img2img_tile.json"
 _TXT2IMG_SUBJECT_WORKFLOW_PATH = _WORKFLOWS_DIR / "txt2img_subject.json"
 _IMG2IMG_SUBJECT_WORKFLOW_PATH = _WORKFLOWS_DIR / "img2img_subject.json"
-_I2V_LOOP_WORKFLOW_PATH = _WORKFLOWS_DIR / "i2v_loop.json"
 
 
 def _build_tile_workflow(base_workflow: dict, positive: str, negative: str) -> dict:
@@ -63,38 +57,7 @@ _NEGATIVE_MESH = ("blurry, low detail, cropped, cut off, partial object, multipl
 # mesh's subject is matted because TRELLIS lifts a cut-out. A tile or a backdrop IS the
 # background: matting one leaves the ragged fragments of a floor that used to be a floor, so those
 # keep the full opaque frame the sampler drew.
-MATTED_KINDS = ("sprite", "mesh", "anim")
-
-# An ANIM's still is not a sprite: it is meshed, and the mesh is rigged. Voxelisation welds
-# whatever touches, so the pose has to hold the limbs clear of the body — measured, the plain
-# sprite prompt came back cropped at the waist 8 times in 10, and a standing pose's arms fused to
-# the coat at every height. A T-pose costs nothing and separates them.
-ANIM_STILL_FRAMING = (
-    " Standing in a T-pose with both arms stretched straight out horizontally to the sides at "
-    "shoulder height, palms down, legs straight and shoulder-width apart. Full body from head to "
-    "feet, both feet visible and planted on the ground, and space around the figure on every "
-    "side. Plain flat white background, flat even lighting, no cast shadow.")
-
-# MiniMax-H3 image-to-video. A clip's length snaps to 17k+5 frames at 24 fps; a pinned clip
-# (first frame = last frame) closes on itself, and 22 frames is one stride, one swing or one
-# full turn in place — the sheet keeps 8 of them at 12 fps. Measured 2026-09-04 on a 5090: ~8 s
-# a clip at 6 steps with the models resident; a 73-frame clip at 20 steps cost 76 s and its
-# attack drifted into smears the short one has no room for.
-_I2V_STYLE = ("2D game character sprite on a plain white background. No camera movement, the "
-              "character stays centered, consistent character design, plain white background.")
-_I2V_TURN = ("The character stands still and turns once in place like a turntable: it turns to "
-             "face the right side of the screen, then turns to face away from the camera, then "
-             "turns to face the left side of the screen, then turns back to face the camera "
-             "exactly as it started. No walking.")
-_I2V_TURN_LENGTH = 22
-# A loop survives the six steps the workflow runs; a turn does not — at six the character
-# dissolved mid-turn and the profile stills seeded every side view wrong (2026-09-04).
-_I2V_TURN_STEPS = 20
-_I2V_LOOP = {"frames": 22, "cells": 8, "fps": 12}
-# The build names each animation as an action in prose; the clip is pinned, so the tail says
-# what the pin already enforces and the model stops fighting it.
-_I2V_ACTION_TAIL = " It ends exactly as it started."
-I2V_DIRS = ("front", "right", "back", "left")
+MATTED_KINDS = ("sprite", "mesh")
 
 _MATTE_NODE = "47"
 _DECODE_NODE = "8"
@@ -118,9 +81,6 @@ def _subject_prompt(description: str, kind: str) -> tuple:
 
 
 def _build_subject_workflow(base_workflow: dict, description: str, kind: str) -> dict:
-    """The Qwen subject graph: sprites, scenes, anim stills and mesh subjects all render here
-    (the sprite re-bake-off of 2026-09-04 retired the anime checkpoint). It carries its own matte,
-    which a scene — the background itself — has taken out."""
     wf = copy.deepcopy(base_workflow)
     positive, negative = _subject_prompt(description, kind)
     wf["p"]["inputs"]["text"] = positive
@@ -164,31 +124,6 @@ def build_img2img_job(description: str, init_name: str, kind: str = "sprite",
     wf["3"]["inputs"]["denoise"] = denoise
     _drop_matte(wf)
     return {"prompt": description, "workflow_override": wf}
-
-
-def build_anim_payload(still_png_b64: str, anims: Sequence[Dict[str, str]],
-                       facings: int) -> Dict[str, Any]:
-    """The queue payload that turns ONE matted still into a sprite sheet of the animations the
-    build named (`anims`: [{name, action}]) — a walking knight, a car whose wheels spin, a card
-    that flips. `facings` is 4 when the thing is seen from the side and the game needs it
-    facing front, right, back and left (a turntable clip yields the other three stills), or 1
-    when one view is all there is (top-down, or flat) and the game rotates it in code. The one
-    pinned workflow rides the payload fully resolved but for the still's name, the prompt and
-    the length, which the worker fills per clip: it is the worker that knows which clip it is
-    submitting."""
-    turn = None
-    if facings == 4:
-        turn = {"prompt": _I2V_STYLE + " " + _I2V_TURN, "length": _I2V_TURN_LENGTH,
-                "steps": _I2V_TURN_STEPS}
-    return {"kind": "anim_sheet",
-            "image_b64": still_png_b64,
-            "turn": turn,
-            "loop": {"workflow": _load_workflow(_I2V_LOOP_WORKFLOW_PATH)},
-            "anims": {a["name"]: {**_I2V_LOOP,
-                                  "prompt": _I2V_STYLE + " " + a["action"].strip().rstrip(".")
-                                            + "." + _I2V_ACTION_TAIL}
-                      for a in anims},
-            "dirs": list(I2V_DIRS) if facings == 4 else [I2V_DIRS[0]]}
 
 
 def build_image_payload(description: str, kind: str = "sprite",

@@ -14,11 +14,10 @@ the ones we reject, because "why we didn't switch" is the expensive thing to rel
 |---|---|---|---|
 | Build turns (the LLM) | Qwen3.8 Flash-Next: NVFP4 in prod, IQ3_S on a 5090 | Pennyroyal SGLang on an RTX PRO 6000; Basalt on a 5090 | `llm.model` in settings.json |
 | Tiles | DreamShaperXL Turbo v2.1 → min-cut quilting | ComfyUI + `tools/quilting.py` | `workflows/txt2img_tile.json` |
-| Sprites, scenes, anim stills, mesh subjects, scene-chain subjects | Qwen-Image 2512 | ComfyUI | `workflows/txt2img_subject.json` |
-| Anim sheets (image-to-video loops) | MiniMax-H3 | ComfyUI, the `video` queue | `workflows/i2v_loop.json` + `worker/anim_sheet.py` |
+| Sprites, scenes, mesh subjects, scene-chain subjects | Qwen-Image 2512 | ComfyUI | `workflows/txt2img_subject.json` |
 | Scene-chain terrain | DreamShaperXL Turbo v2.1 (masked img2img) | ComfyUI | graph built in `scenegen/paint.py` |
 | Scene-chain embed | Qwen-Image-Edit 2511 | ComfyUI | `workflows/imgedit_scene.json` |
-| 3D meshes | TRELLIS 2 | home-rolled runtime, `tools/trellis_server.py` | — |
+| 3D meshes | TRELLIS 2 | home-rolled runtime, `engines/trellis/trellis_server.py` in gamesummoner-images | — |
 | Render safety scoring | small timm ViT, locally exported | in the image worker | `scripts/export_safety_model.py` |
 | Sound effects, music, voice | **nothing** | — | — |
 

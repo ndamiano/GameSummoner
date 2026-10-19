@@ -13,9 +13,7 @@ runtime/
                          named effects, and `sound`/`noise`/`seq`/`loop` for the ones a game
                          invents — a footstep, an engine that rises with speed, an alarm),
                          canvas.js (the fixed, scaling canvas with a camera), lights.js (sun +
-                         sky + exposure for a three.js scene that is not a world), sprites.js
-                         (draws a generate_media actor with anims — one sheet PNG plus its manifest — by
-                         facing, animation and time; a missing facing mirrors its opposite side).
+                         sky + exposure for a three.js scene that is not a world).
                          Each header comment is its API; build.txt tells the model to read the
                          one it uses.
   games/<run_id>/        staged games, served at /play
@@ -240,17 +238,14 @@ src/
       assets.py          the ASSET stage — `request_media` is what the game's generate_media call
                          runs. The ask is STRUCTURED: `kind` (sprite, actor, tile, scene, mesh),
                          `subject` (prose, no style words), `style` (the game's one phrase) and
-                         `details` — the facts prose cannot carry: body plan, view, anims and
-                         facings, accepted on every kind and animated only for an actor today.
+                         `details` — the facts prose cannot carry: body plan and view.
                          `compose_prompt` renders them to the one prose string the samplers see
                          (style, subject, view), so where the style sits is a measurable edit
-                         here rather than whatever the builder typed, and `render_kind` maps an
-                         actor to the pipeline's sprite or anim leg. Then: enqueue ONE `image`
+                         here rather than whatever the builder typed, and `render_kind` draws an
+                         actor as a sprite. Then: enqueue ONE `image`
                          job, record the ask in assets.json, write a
-                         PLACEHOLDER at the path (a matted disc for a sprite, mesh or anim, an
-                         opaque frame for a tile or scene — an anim's placeholder is that disc as
-                         a one-frame sheet with its manifest beside it, so `lib/sprites.js` loads
-                         it like any other) and answer with the path. The game
+                         PLACEHOLDER at the path (a matted disc for a sprite, an opaque frame for
+                         a tile or scene, none for a mesh) and answer with the path. The game
                          never loads a file that is not there — a `drawImage` of a broken image
                          throws every frame — and the manifest's `placeholder` flag, cleared by
                          the landing op, is what "rendered" means everywhere a bare file check
@@ -265,19 +260,7 @@ src/
                          TRELLIS lifts a stylized cut-out far better than a photo or an anime
                          sprite, `docs/experiments.md` 2026-09-03) and lands normalized to 1 unit at its longest side, which the
                          tool's answer states: placement code cannot discover scale any other
-                         way, and an untold model shipped a knee-high lighthouse. An anim chains image →
-                         `mesh` → the same pod's `sprite_sheet` job (`tools/sprite_server.py`,
-                         `maestro/sprites3d/`), which RENDERS the sheet: the still is a T-pose so
-                         voxelisation cannot weld the limbs to the body, the mesh is rigged from a
-                         canonical humanoid measured onto that pose, a motion model animates the
-                         skeleton from the verb the build's `action` prose names, and four camera
-                         angles are shot per animation. A video model conditioned on the still as
-                         both first AND last frame answers a one-shot by not moving — 14 of 16
-                         clips in a shipped sheet were stills. The drawn path
-                         (`build_anim_payload`, `worker/anim_sheet.py`) stays wired for a video
-                         model we can license (`docs/models.md`); until one lands, a silhouette no
-                         humanoid skeleton fits ships as its still, one frame per animation
-                         (`_save_still_as_sheet`). See `docs/experiments.md` 2026-09-04. Rendering every
+                         way, and an untold model shipped a knee-high lighthouse. Rendering every
                          kind through one item-icon path matted a game's floor tiles down to a
                          handful of planks — it said "tile" in every prompt and nothing could
                          hear it. A refused compute budget is answered as "draw this one with
@@ -379,8 +362,8 @@ src/
                          that cannot run logs and stands — boundary, like the error gate. Round
                          state in runs/<id>/play_gate.json.
       asset_chain.py     what a finished asset job does NEXT — the names in its `metadata.then`: a
-                         CONTINUATION to enqueue (mesh_from_image, anim_from_image), OPERATIONS on
-                         this result (save_sprite / save_flat / decimate / save_anim), and the
+                         CONTINUATION to enqueue (mesh_from_image), OPERATIONS on
+                         this result (save_sprite / save_flat / decimate), and the
                          batch's FINALIZE. It owns those
                          names so the queue stays a generic transport that never learns what an
                          asset is. Two finalizes: `assets` lands the art and leaves the build's
@@ -390,15 +373,6 @@ src/
                          attached NSFW scores to the render, `assets.render_verdict` decides, and
                          a refused (or verdict-less) render is deleted, marked on the manifest and
                          recorded as a violation — a refused mesh source never reaches TRELLIS.
-                         `_mesh_for_sheet` keeps the sprite render as `<id>.src.png` (a re-seed
-                         needs an image, not a sheet) the same way a mesh does, and a top-up with
-                         that still resumes at TRELLIS; `_save_anim` writes the sheet PNG and its manifest to
-                         the promised path together, admitted on the worst NSFW score across the
-                         sheet: a drawn sheet's four facing stills, since every frame descends
-                         from one of them, or every cell of a rendered one (`handlers.sprite_sheet`
-                         scores them on the mesh pod). Measured 2026-09-12: the rendered path
-                         carried no scores at all, so every rendered sheet on prod was refused as
-                         verdict-less and deleted.
       artifact_screen.py the artifact TEXT gate — the game folder's authored text through the same
                          narrow screen as every input seam, at finalize before staging. A hit
                          HOLDS the build: status `held`, not staged, not archived, play/build/change
@@ -505,10 +479,8 @@ and `frontend/` (the React SPA, served same-origin by the API).
 
 ## Where inference happens
 
-Only inside a build, as a chain of `llm` jobs, with art riding three more queues off the same
-transport: `image` (sprite, tile, scene and mesh renders, TRELLIS), `mesh` (TRELLIS itself) and
-`video` (`anim_sheet` — image-to-video, turning one matted sprite render into a directional
-sheet; wired, unused until a model we can license lands). The request paths, the completion dispatch and how
+Only inside a build, as a chain of `llm` jobs, with art riding two more queues off the same
+transport: `image` (sprite, tile, scene and mesh renders) and `mesh` (TRELLIS itself). The request paths, the completion dispatch and how
 a new stage registers are in `docs/architecture.md` § Request paths.
 
 ---
@@ -536,12 +508,3 @@ One card game rendered 67 and used none, while shipping 114 paths under an `asse
 that does not exist. The tool answers with a path and never learns whether the path was used, so
 until the audit nothing in the loop could see either half. Orphaning is NOT the recent prompt edit: a
 build carrying the older "draw a plain shape at that spot" line orphaned 7 of its 8.
-
-`anim` is the newest kind — one call per thing that moves, with the build naming its animations
-(`anims`: name + action) and its facings (4 from a turntable clip, or 1 for a top-down or flat
-thing the game rotates), and it comes back as a sheet of those rather than the single image every
-other kind returns. Cost is real: each (animation, facing) is one ~8 s clip plus a 20 s turntable
-for a four-facing thing — a knight with walk, idle and attack facing four ways is ~2 minutes of GPU
-(`docs/experiments.md` 2026-09-04) — so the same rationing pressure that thins mesh asks applies
-here: fewer facings (mirroring covers left/right) or fewer animations are the levers, not a
-smaller sheet.

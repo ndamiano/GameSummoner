@@ -27,7 +27,7 @@ def test_the_prompt_is_the_positive_verbatim():
     assert job["workflow_override"]["l"]["inputs"]["height"] == 1024
 
 
-@pytest.mark.parametrize("kind", ["sprite", "scene", "anim"])
+@pytest.mark.parametrize("kind", ["sprite", "scene"])
 def test_subjects_render_through_qwen(kind):
     wf = build_image_job("A key.", kind)["workflow_override"]
     assert wf["u"]["inputs"]["unet_name"].startswith("qwen_image_2512")
@@ -64,8 +64,8 @@ def test_the_seed_is_set_per_job():
     assert isinstance(a, int) and a != b
 
 
-@pytest.mark.parametrize("kind", ["sprite", "anim"])
-def test_a_sprite_is_matted(kind):
+@pytest.mark.parametrize("kind", ["sprite", "mesh"])
+def test_a_matted_kind_is_matted(kind):
     wf = build_image_job("A rusty iron key.", kind)["workflow_override"]
     assert wf["s"]["inputs"]["images"] == ["m", 0]      # the output reads BiRefNet
 

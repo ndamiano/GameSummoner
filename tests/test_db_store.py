@@ -257,9 +257,8 @@ def test_every_failed_path_leaves_measurements_not_words():
 def test_a_failed_batch_render_drops_its_blob():
     games.create_game("g1", "u1")
     games.charge_game("g1", 10, 144_000)
-    job_id = jobs.enqueue_job("video", {"kind": "anim", "image_b64": "A" * 5000,
-                                         "anims": {"walk": 4}, "dirs": ["south"]},
+    job_id = jobs.enqueue_job("mesh", {"kind": "trellis_mesh", "image_b64": "A" * 5000},
                                game_id="g1", build_id="b1", batch_id="batch1")
     assert jobs.abandon_pending_batch_jobs("g1", "budget") == 1
-    assert _payload_of(job_id) == {"kind": "anim", "anims": ["walk"], "dirs": ["south"]}
+    assert _payload_of(job_id) == {"kind": "trellis_mesh"}
 

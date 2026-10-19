@@ -8,7 +8,7 @@ Everything needed to bring the platform up on one box, and the settings that dec
 ## Bring it up
 
 Four things run: the control plane, the frontend, whatever serves the models, and one worker per
-queue (five queues: `decide`, `llm`, `image`, `mesh`, `video`). The control plane touches no GPU at all — the
+queue (four queues: `decide`, `llm`, `image`, `mesh`). The control plane touches no GPU at all — the
 worker-pull queue is the only transport — so a queue with no worker means every job on it times out.
 
 **Backend** — `source venv/bin/activate && python run.py`
@@ -18,17 +18,15 @@ worker-pull queue is the only transport — so a queue with no worker means ever
 **Workers** — `scripts/local_gpu.py` starts them (below), and it is the only way to: a worker
 row is created, priced, before the worker runs — the scaler does it for a pod at the pod's rate,
 `local_gpu.py` does it for this box at zero — and a claim from a worker id nobody created is
-refused, so a bare `python -m worker.agent` never lands a job. `video` targets the same ComfyUI
-instance as `image` (MiniMax-H3 runs there too) and needs `SAFETY_MODEL_DIR` for the same reason
-`image` does — every frame the sheet is built from gets an NSFW verdict. `decide` runs the image
+refused, so a bare `python -m worker.agent` never lands a job. `decide` runs the image
 repo's own box (`local/decide/run.sh`, docker image `gamesummoner/decide-local`), which carries its
 engine, contract server and worker in one container.
 
-**One card, five queues, `auto`** — a world build (`compose_world`, or `worldgen.build.build_world`
+**One card, four queues, `auto`** — a world build (`compose_world`, or `worldgen.build.build_world`
 by hand) alternates llm/image/mesh jobs many times and
 blocks until each completes, so there is no point at which the legs can be drained "one at a time
 by hand". `scripts/local_gpu.py auto` runs the control plane's other half instead: it polls all
-five queues, starts (model + worker) whichever has pending work — favoring the queue it already
+four queues, starts (model + worker) whichever has pending work — favoring the queue it already
 holds so a momentary empty doesn't thrash it, except that a queue whose oldest job has waited
 ten minutes takes the card, because the control plane fails a job nobody claims in thirty and a
 build's turns can keep the llm queue non-empty for an hour — and stops what it started on
@@ -40,7 +38,7 @@ queue, or the card it was holding. The llm leg runs Basalt from `BASALT_DIR` (de
 `~/Documents/basalt`) with the engine flags in `BASALT_CONFIG` (default
 `/var/lib/models/basalt/basalt-iq3s.json`). Run it
 in one terminal alongside `python run.py`; `--idle-exit SECONDS` stops and exits once nothing is
-pending anywhere for that long (default: never). The single-leg (`llm`/`image`/`mesh`/`video`) and
+pending anywhere for that long (default: never). The single-leg (`llm`/`image`/`mesh`) and
 `all` modes still exist for draining one queue by hand.
 
 A build that calls `compose_world` needs `auto` for the same reason: the world's stages and the
@@ -123,17 +121,6 @@ hurt.
 ### Images — ComfyUI
 
 Local: `comfy-start`. Over the network: run `main.py --listen 0.0.0.0` from the Comfy checkout.
-
-### Anims — the video leg shares this ComfyUI
-
-MiniMax-H3 (pruned int8) runs as core ComfyUI nodes, not a separate server: the `video` queue's
-worker points at the same instance as `image`. It needs mess-with-comfy 0.30.1 or later (that's
-where the MiniMax nodes landed) with the weights under `/var/lib/models/image` alongside the image
-checkpoints, and ~30 GB of VRAM for a clip — nothing else runs on the card while a `video` job is
-in flight, same as the mesh/image exclusion below.
-
-Nothing enqueues on `video` today: MiniMax-H3's license does not cover the US (`docs/models.md`),
-so a silhouette no skeleton fits ships as its still. The leg stays wired for the next model.
 
 ### Meshes — TRELLIS
 
@@ -321,8 +308,7 @@ per-queue `queues.<name>` scaling blocks (template_id, network_volume_ids, gpu_t
 allowed_cuda_versions, max_workers, thresholds, cooldown, idle_exit_seconds,
 boot_deadline_seconds). The `queues` dict
 replaces the default wholesale — carry complete blocks. settings.json is the only place the block
-lives; `docs/deploy.md` describes what each knob does to a pod. The `video` block is the image
-block with its own template id — the same image, told its queue by the scaler.
+lives; `docs/deploy.md` describes what each knob does to a pod.
 
 `gpu_type_ids` is PRIORITY-ORDERED: the scaler asks for the head alone and widens to the whole list
 only when RunPod refuses that create, since the cards are not substitutes. Which card a pod GOT is the worker's to report, from the device — a control plane that

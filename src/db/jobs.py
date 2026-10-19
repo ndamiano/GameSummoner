@@ -179,9 +179,6 @@ def elide_payload(queue: str, payload: Dict) -> Dict:
         node = next((wf[k] for k in ("p", "6") if k in wf), {})
         return {"prompt": (node.get("inputs") or {}).get("text") or "",
                 "mode": "img2img" if payload.get("uploads") else "txt2img"}
-    if queue == "video":
-        return {"kind": payload.get("kind"), "anims": list(payload.get("anims") or {}),
-                "dirs": payload.get("dirs") or []}
     return {"kind": payload.get("kind")}
 
 

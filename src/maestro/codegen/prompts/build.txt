@@ -52,9 +52,8 @@ you need.
       a canvas.
     lib/input.js (keys with WASD and arrows both bound, mouse, touch), lib/audio.js (every sound a
       game makes, synthesised), lib/canvas.js (scales a fixed logical size onto your own <canvas>,
-      with a camera), lib/sprites.js (draws a generate_media actor with anims), lib/lights.js (lights
-      for a three.js scene that is not a compose_world world). Each one's header comment is its API —
-      read_file the one you use before importing it.
+      with a camera), lib/lights.js (lights for a three.js scene that is not a compose_world world).
+      Each one's header comment is its API — read_file the one you use before importing it.
     docs/generate_media.md and docs/compose_world.md — how to call those two tools well: what each
       argument is, with an example. Read the one you need before your first call to it.
     design/ — the build spec your design team wrote for this game.

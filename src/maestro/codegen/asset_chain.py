@@ -10,7 +10,6 @@ the batch runs the finalize.
 """
 
 import base64
-import json
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -33,7 +32,6 @@ from maestro.codegen.assets import (
 from maestro.codegen.staging import stage_for_play
 from maestro.state import RunState
 from tools.build_events import _emit
-from tools.comfyui_tools import build_anim_payload
 from tools.quilting import quilt_tile
 from tools.safety import SafetyViolation, log_violation
 
@@ -80,63 +78,7 @@ def _mesh_from_image(md: Dict, result: Dict) -> Optional[Dict]:
                                         "finalize": md["then"]["finalize"]}}}
 
 
-def _anim_from_image(md: Dict, result: Dict) -> Optional[Dict]:
-    """The sprite render a video job animates into a sheet. Like a mesh, the source render is kept
-    for a re-seed, and the PNG rides the payload because the worker is remote."""
-    src = _admit(md, _first_image(result))
-    if src is None:
-        return None
-    data = Path(src).read_bytes()
-    asset_path(md["run_id"], md["asset_id"], "src.png").write_bytes(data)
-    return {"queue": "video",
-            "payload": build_anim_payload(base64.b64encode(data).decode("ascii"),
-                                          md["anims"], md["facings"]),
-            "metadata": {**md, "then": {"operations": ["save_anim"],
-                                        "finalize": md["then"]["finalize"]}}}
-
-
-def _mesh_for_sheet(md: Dict, result: Dict) -> Optional[Dict]:
-    """An anim's T-posed still, on its way to becoming a mesh the sheet is RENDERED from."""
-    job = _mesh_from_image(md, result)
-    if job is None:
-        return None
-    job["metadata"]["then"] = {"enqueue": "sheet_from_mesh",
-                               "finalize": md["then"]["finalize"]}
-    return job
-
-
-def _sheet_from_mesh(md: Dict, result: Dict) -> Optional[Dict]:
-    glb = (result or {}).get("glb_file")
-    if not glb:
-        return None
-    return {"queue": "mesh",
-            "payload": {"kind": "sprite_sheet",
-                        "glb_b64": base64.b64encode(Path(glb).read_bytes()).decode("ascii"),
-                        "anims": md["anims"], "facings": md["facings"]},
-            "metadata": {**md, "then": {"operations": ["save_anim"],
-                                        "finalize": md["then"]["finalize"]}}}
-
-
-def _anim_from_still(md: Dict, result: Dict) -> Optional[Dict]:
-    """The drawn path, for a thing no humanoid skeleton fits. The still is already on disk from
-    the mesh leg, so nothing is re-rendered."""
-    if not (result or {}).get("fallback"):
-        return None
-    src = asset_path(md["run_id"], md["asset_id"], "src.png")
-    if not src.exists():
-        return None
-    logger.info("assets %s: %s is not a humanoid — drawing the sheet instead",
-                md["run_id"], md["asset_id"])
-    return {"queue": "video",
-            "payload": build_anim_payload(base64.b64encode(src.read_bytes()).decode("ascii"),
-                                          md["anims"], md["facings"]),
-            "metadata": {**md, "then": {"operations": ["save_anim"],
-                                        "finalize": md["then"]["finalize"]}}}
-
-
-CONTINUATIONS = {"mesh_from_image": _mesh_from_image, "anim_from_image": _anim_from_image,
-                 "mesh_for_sheet": _mesh_for_sheet, "sheet_from_mesh": _sheet_from_mesh,
-                 "anim_from_still": _anim_from_still}
+CONTINUATIONS = {"mesh_from_image": _mesh_from_image}
 
 
 def _record_defect(md: Dict, dst: Path) -> None:
@@ -207,46 +149,7 @@ def _decimate(md: Dict, result: Dict) -> None:
     _mark_landed(md)
 
 
-def _save_anim(md: Dict, result: Dict) -> None:
-    """The sheet and its manifest land together at the promised path (the PNG the game named,
-    the JSON beside it), after the same verdict a render gets: the worker scored the four facing
-    stills every frame descends from, and the worst of them speaks for the sheet."""
-    if (result or {}).get("fallback"):
-        _save_still_as_sheet(md, result["fallback"])
-        return
-    src = (result or {}).get("sheet_file")
-    if not src:
-        return
-    if _admit(md, {"file": src, "safety": result.get("safety")}) is None:
-        return
-    dst = asset_path(md["run_id"], md["asset_id"], "png")
-    dst.write_bytes(Path(src).read_bytes())
-    dst.with_suffix(".json").write_text(json.dumps(result["manifest"]))
-    _mark_landed(md)
-    for warning in result["manifest"].get("warnings") or []:
-        logger.warning("assets %s: %s anim %s", md["run_id"], md["asset_id"], warning)
-
-
-def _save_still_as_sheet(md: Dict, reason: str) -> None:
-    src = asset_path(md["run_id"], md["asset_id"], "src.png")
-    if not src.exists():
-        return
-    im = autocrop_image(Image.open(src).convert("RGBA"))
-    dst = asset_path(md["run_id"], md["asset_id"], "png")
-    save_image(im, dst)
-    dst.with_suffix(".json").write_text(json.dumps(
-        {"cell": {"w": im.width, "h": im.height}, "dirs": ["front"],
-         "anims": {a["name"]: {"rows": {"front": 0}, "frames": 1, "fps": 1}
-                   for a in md["anims"]},
-         "pivot": {"x": im.width / 2.0, "y": im.height - 4.0},
-         "warnings": [f"{reason}: the still stands in for every animation"]}))
-    _mark_landed(md)
-    logger.warning("assets %s: %s anim %s — shipped as its still",
-                   md["run_id"], md["asset_id"], reason)
-
-
-OPERATIONS = {"save_sprite": _save_sprite, "save_flat": _save_flat, "decimate": _decimate,
-              "save_anim": _save_anim}
+OPERATIONS = {"save_sprite": _save_sprite, "save_flat": _save_flat, "decimate": _decimate}
 
 
 def _finalize_landing(md: Dict, jobs: List[Dict]):

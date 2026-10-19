@@ -229,8 +229,8 @@ def test_an_omitted_argument_is_named_back(media):
 
 
 def test_an_unknown_kind_is_refused(media):
-    out = media(id="goblin", subject="a goblin", style=STYLE, kind="video")
-    assert out["ok"] is False and "video" in out["error"]
+    out = media(id="goblin", subject="a goblin", style=STYLE, kind="anim")
+    assert out["ok"] is False and "anim" in out["error"]
 
 
 def test_an_explicitly_empty_kind_is_the_default(media):
@@ -279,94 +279,6 @@ def _jobs(queue):
     return [jobs._job_dict(r) for r in rows]
 
 
-KNIGHT_ANIMS = [{"name": "walk", "action": "walks in place, legs alternating"},
-                {"name": "attack", "action": "swings the sword once"}]
-
-
-def test_an_anim_answers_with_a_png_path_and_chains_a_mesh(run_dir):
-    """The sheet is rendered from a mesh of the thing, so the still's job is to be meshed."""
-    out = request_media(RUN, run_dir, "b1", "knight", "a knight", STYLE, kind="actor", details={"anims": KNIGHT_ANIMS, "facings": 4})
-    assert out["path"] == "assets/knight.png"
-    md = _image_jobs()[0]["metadata"]
-    assert md["kind"] == "anim"
-    assert md["then"] == {"enqueue": "mesh_for_sheet", "finalize": "assets"}
-
-
-def test_an_anims_still_is_a_t_pose(run_dir):
-    """A standing pose's arms fuse to the body when the mesh is voxelised, and the sprite's own
-    view is irrelevant because the sheet shoots every facing from a camera."""
-    request_media(RUN, run_dir, "b1", "knight", "a knight", STYLE, kind="actor",
-                  details={"anims": KNIGHT_ANIMS, "facings": 4, "view": "side"})
-    prompt = read_manifest(run_dir)[0]["prompt"]
-    assert "T-pose" in prompt
-    assert "side view" not in prompt
-
-
-def test_an_anim_placeholder_writes_both_the_png_and_the_manifest(run_dir):
-    request_media(RUN, run_dir, "b1", "knight", "a knight", STYLE, kind="actor", details={"anims": KNIGHT_ANIMS, "facings": 4})
-    png = run_dir / "game" / "assets" / "knight.png"
-    manifest = run_dir / "game" / "assets" / "knight.json"
-    assert png.exists() and manifest.exists()
-    entry = read_manifest(run_dir)[0]
-    assert entry["kind"] == "actor"
-    assert entry["details"] == {"anims": KNIGHT_ANIMS, "facings": 4}
-    # the stand-in manifest already answers to the names the game will ask for
-    assert set(json.loads(manifest.read_text())["anims"]) == {"walk", "attack"}
-
-
-def test_an_anim_request_carries_its_spec_to_the_video_leg(run_dir):
-    request_media(RUN, run_dir, "b1", "car", "a red racing car seen from above", STYLE, kind="actor",
-                  details={"anims": [{"name": "drive", "action": "the wheels spin"}], "facings": 1})
-    md = _image_jobs()[0]["metadata"]
-    assert md["anims"] == [{"name": "drive", "action": "the wheels spin"}]
-    assert md["facings"] == 1
-
-
-@pytest.mark.parametrize("anims, facings, word", [
-    ([], 4, "anims"),
-    ([{"name": "walk"}], 4, "action"),
-    ([{"name": "walk", "action": "walks"}, {"name": "walk", "action": "walks"}], 4, "distinct"),
-    ([{"name": "walk", "action": "walks"}], 2, "facings"),
-    ([{"name": "walk", "action": "walks"}], None, "facings"),
-])
-def test_an_anim_without_a_full_spec_is_refused_with_the_reason(run_dir, anims, facings, word):
-    out = request_media(RUN, run_dir, "b1", "knight", "a knight", STYLE, kind="actor", details={"anims": anims, "facings": facings})
-    assert out["ok"] is False and word in out["error"]
-    assert _image_jobs() == []
-
-
-def test_a_top_up_resumes_an_anim_from_its_source_render_at_the_mesh(run_dir):
-    request_media(RUN, run_dir, "b1", "knight", "a knight", STYLE, kind="actor", details={"anims": KNIGHT_ANIMS, "facings": 4})
-    src = assets.asset_path(RUN, "knight", "src.png")
-    src.parent.mkdir(parents=True, exist_ok=True)
-    src.write_bytes(b"\x89PNG-the-still-we-already-paid-for")
-
-    assets.start_from_manifest(RUN, run_dir, "b1")
-
-    mesh_jobs = _jobs("mesh")
-    assert len(mesh_jobs) == 1, "the top-up went to TRELLIS, not back to ComfyUI"
-    assert mesh_jobs[0]["payload"]["kind"] == "trellis_mesh"
-    assert mesh_jobs[0]["metadata"]["then"] == {"enqueue": "sheet_from_mesh", "finalize": "art_build"}
-    assert {a["name"] for a in mesh_jobs[0]["metadata"]["anims"]} == {"walk", "attack"}
-    assert len(_jobs("image")) == 1, "no second still render was paid for"
-    assert _jobs("video") == []
-
-
-def test_an_anim_with_no_source_render_still_starts_at_the_image(run_dir):
-    request_media(RUN, run_dir, "b1", "knight", "a knight", STYLE, kind="actor", details={"anims": KNIGHT_ANIMS, "facings": 4})
-
-    assets.start_from_manifest(RUN, run_dir, "b1")
-
-    assert len(_jobs("image")) == 2 and _jobs("video") == []
-
-
-def test_kind_video_is_still_an_unknown_kind(media):
-    """anim is the new kind; video (the queue it lands on, not something a game asks for) must
-    stay refused."""
-    out = media(id="knight", subject="a knight", style=STYLE, kind="video")
-    assert out["ok"] is False and "video" in out["error"]
-
-
 def test_a_top_up_resumes_a_mesh_from_the_source_render_it_already_has(run_dir):
     """A mesh is ComfyUI and then TRELLIS, and one GPU holds one of them, so a top-up that always
     restarted at the image leg could never reach the second half on a single-card box."""
@@ -406,33 +318,13 @@ def test_the_prompt_is_composed_style_first_then_subject_then_view(run_dir):
     assert _image_jobs()[0]["payload"]["workflow"]["p"]["inputs"]["text"] == entry["prompt"]
 
 
-def test_an_actor_without_anims_renders_as_a_sprite(run_dir):
+def test_an_actor_renders_as_a_sprite(run_dir):
     out = request_media(RUN, run_dir, "b1", "ben", "a man", STYLE, kind="actor",
                         details={"body": "biped"})
     assert out["path"] == "assets/ben.webp"
     md = _image_jobs()[0]["metadata"]
-    assert md["kind"] == "sprite" and "anims" not in md
+    assert md["kind"] == "sprite"
     assert read_manifest(run_dir)[0]["kind"] == "actor"
-
-
-def test_an_actor_with_anims_renders_as_an_anim(run_dir):
-    out = request_media(RUN, run_dir, "b1", "ben", "a man", STYLE, kind="actor",
-                        details={"body": "biped", "anims": KNIGHT_ANIMS, "facings": 4})
-    assert out["path"] == "assets/ben.png"
-    md = _image_jobs()[0]["metadata"]
-    assert md["kind"] == "anim" and md["anims"] == KNIGHT_ANIMS and md["facings"] == 4
-
-
-def test_anims_on_another_kind_are_kept_and_it_renders_still(run_dir):
-    """A scene with a boiling pot is a real ask; today only an actor animates, so the anims are
-    recorded for the day the scene chain can, and the model is told it gets a still."""
-    out = request_media(RUN, run_dir, "b1", "kitchen", "a kitchen with a pot on the stove", STYLE,
-                        kind="scene", details={"anims": [{"name": "boil", "action": "the pot bubbles"}],
-                                               "facings": 1})
-    assert out["ok"] and out["path"] == "assets/kitchen.webp"
-    assert "only an actor is animated" in out["note"]
-    assert _image_jobs()[0]["metadata"]["kind"] == "scene"
-    assert read_manifest(run_dir)[0]["details"]["anims"][0]["name"] == "boil"
 
 
 def test_details_must_be_an_object(media):

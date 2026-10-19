@@ -155,7 +155,7 @@ def _art_jobs(run_id, bid):
     return [jobs.enqueue_job(q, {}, game_id=run_id, build_id=bid, batch_id="batch1",
                               metadata={"run_id": run_id, "asset_id": f"a{i}",
                                         "then": {"enqueue": "mesh", "finalize": "assets"}})
-            for i, q in enumerate(("image", "video", "mesh"))]
+            for i, q in enumerate(("image", "mesh"))]
 
 
 def test_stop_cancels_pending_and_claimed_art_on_every_queue(tmp_runs, quiet, monkeypatch):
@@ -165,7 +165,7 @@ def test_stop_cancels_pending_and_claimed_art_on_every_queue(tmp_runs, quiet, mo
     art = _art_jobs(run_id, bid)
     jobs.claim_job("image", "w1", 600)
     assert build_chain.stop(run_id) is True
-    assert [jobs.get_job(j)["status"] for j in art] == ["failed"] * 3
+    assert [jobs.get_job(j)["status"] for j in art] == ["failed"] * 2
     assert games.builds_for(run_id)[0]["status"] == "stopped"
 
 

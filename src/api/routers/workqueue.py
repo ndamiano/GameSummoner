@@ -117,7 +117,7 @@ def _offload_blobs(job_id: str, result: Optional[Dict]) -> list:
     if not result:
         return []
     has_images = any("b64" in img for img in result.get("images") or [])
-    if "glb_b64" not in result and "sheet_b64" not in result and not has_images:
+    if "glb_b64" not in result and not has_images:
         return []
     if not _JOB_ID_RE.fullmatch(job_id):
         raise HTTPException(status_code=400, detail="bad job id")
@@ -128,11 +128,6 @@ def _offload_blobs(job_id: str, result: Optional[Dict]) -> list:
         path = blob_dir / f"{job_id}.glb"
         path.write_bytes(base64.b64decode(result.pop("glb_b64")))
         result["glb_file"] = str(path)
-        written.append(path)
-    if "sheet_b64" in result:
-        path = blob_dir / f"{job_id}.png"
-        path.write_bytes(base64.b64decode(result.pop("sheet_b64")))
-        result["sheet_file"] = str(path)
         written.append(path)
     for i, img in enumerate(result.get("images") or []):
         if "b64" not in img:

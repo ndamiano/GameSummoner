@@ -32,21 +32,19 @@ def test_held_queue_keeps_the_card_while_it_has_work():
 
 
 def test_a_starving_queue_takes_the_card_from_a_busy_one():
-    """A build's turns keep the llm queue non-empty; the sheets behind it must not age into the
-    reaper's cut-off."""
-    pending = {"llm": 1, "image": 0, "mesh": 0, "video": 5}
-    waits = {"llm": 5.0, "image": 0.0, "mesh": 0.0, "video": local_gpu.STARVE_SECONDS + 1}
-    assert local_gpu.choose_action("llm", pending, {"llm": 0}, 3, waits) == "video"
+    pending = {"llm": 1, "image": 0, "mesh": 5}
+    waits = {"llm": 5.0, "image": 0.0, "mesh": local_gpu.STARVE_SECONDS + 1}
+    assert local_gpu.choose_action("llm", pending, {"llm": 0}, 3, waits) == "mesh"
     # under the cut-off the held queue keeps the card
-    waits["video"] = local_gpu.STARVE_SECONDS - 1
+    waits["mesh"] = local_gpu.STARVE_SECONDS - 1
     assert local_gpu.choose_action("llm", pending, {"llm": 0}, 3, waits) == "llm"
 
 
 def test_the_longest_starving_queue_wins_and_the_held_one_never_counts():
-    pending = {"llm": 1, "image": 2, "mesh": 0, "video": 1}
+    pending = {"llm": 1, "image": 2, "mesh": 1}
     waits = {"llm": 9999.0, "image": local_gpu.STARVE_SECONDS + 5,
-             "mesh": 0.0, "video": local_gpu.STARVE_SECONDS + 50}
-    assert local_gpu.choose_action("llm", pending, {"llm": 0}, 3, waits) == "video"
+             "mesh": local_gpu.STARVE_SECONDS + 50}
+    assert local_gpu.choose_action("llm", pending, {"llm": 0}, 3, waits) == "mesh"
 
 
 def test_held_queue_keeps_card_through_a_momentary_empty():

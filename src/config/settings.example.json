@@ -69,19 +69,6 @@
         "cooldown_seconds": 90,
         "idle_exit_seconds": 30,
         "boot_deadline_seconds": 300
-      },
-      "video": {
-        "template_id": "",
-        "gpu_type_ids": [
-          "NVIDIA GeForce RTX 5090",
-          "NVIDIA RTX PRO 4500 Blackwell"
-        ],
-        "max_workers": 3,
-        "boot_seconds": 100,
-        "min_jobs_per_pod": 6,
-        "cooldown_seconds": 90,
-        "idle_exit_seconds": 90,
-        "boot_deadline_seconds": 300
       }
     }
   },

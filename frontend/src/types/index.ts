@@ -45,7 +45,7 @@ export interface DurableEventRow {
 // fetched separately from the authed blob route (never the public /play mount), so there is no url
 // here — the gallery builds an object URL from an authed fetch. `status`: ready (on disk),
 // rendering (a batch is live), or pending (declared, not yet rendered).
-export type AssetKind = 'sprite' | 'tile' | 'scene' | 'mesh' | 'anim'
+export type AssetKind = 'sprite' | 'tile' | 'scene' | 'mesh'
 // 'blocked': the render was refused by the safety screen; a redraw with a new prompt clears it.
 export type AssetStatus = 'ready' | 'rendering' | 'pending' | 'blocked'
 export interface GameAsset {

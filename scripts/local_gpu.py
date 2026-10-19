@@ -34,16 +34,13 @@ IMAGE_PORT = 8700
 
 
 def _worker_python(queue: str) -> str:
-    """Which interpreter runs a queue's worker — image and video need ComfyUI's environment."""
-    if queue in ("image", "video") and COMFY_PYTHON.exists():
+    if queue == "image" and COMFY_PYTHON.exists():
         return str(COMFY_PYTHON)
     if queue == "mesh" and TRELLIS_PYTHON.exists():
         return str(TRELLIS_PYTHON)
     return sys.executable
 TRELLIS_PYTHON = Path(os.environ.get("TRELLIS_PYTHON",
                                      str(Path.home() / "cube3d-lab/trellis2-venv/bin/python")))
-SPRITE_PYTHON = Path(os.environ.get("SPRITE_PYTHON",
-    str(Path.home() / "Documents/Labs/rig-lab/venv-kimodo/bin/python")))
 TRELLIS_REPO = Path(os.environ.get("TRELLIS_REPO", str(Path.home() / "cube3d-lab/trellis2")))
 TRELLIS_WEIGHTS = Path(os.environ.get("TRELLIS_WEIGHTS", str(Path.home() / "cube3d-lab/trellis2-weights")))
 
@@ -52,8 +49,8 @@ IDLE_TICKS = 3          # empty polls before a queue counts as drained; a contin
                         # once" is not empty
 POLL_SECONDS = 2.0
 
-QUEUES = ["decide", "llm", "image", "mesh", "video"]
-PRIORITY = {"decide": 0, "llm": 1, "image": 2, "mesh": 3, "video": 4}  # tie-break when nothing is currently held
+QUEUES = ["decide", "llm", "image", "mesh"]
+PRIORITY = {"decide": 0, "llm": 1, "image": 2, "mesh": 3}
 # A pending job the control plane's reaper will fail before the held queue drains has to be served
 # first: one card, a build whose turns re-fill the llm queue as fast as it empties, and five
 # sheets waited 30 minutes behind it for a worker that never came (2026-09-04, two of five lost).
@@ -98,8 +95,7 @@ def _leg(queue: str) -> dict:
             "cwd": None,
             "env": {},
         }
-    if queue in ("image", "video"):
-        # The same ComfyUI serves both: the image graphs and MiniMax's are nodes in one checkout.
+    if queue == "image":
         return {
             "port": 8188,
             "ready": "http://127.0.0.1:8188/system_stats",
@@ -117,11 +113,6 @@ def _leg(queue: str) -> dict:
                      "--host", "127.0.0.1", "--port", "8189", "--stage-dir", ""],
             "cwd": None,
             "env": {},
-            "sidecar": {
-                "ready": "http://127.0.0.1:8190/health",
-                "argv": [str(SPRITE_PYTHON), str(IMAGES_DIR / "engines" / "sprites" / "sprite_server.py"),
-                         "--host", "127.0.0.1", "--port", "8190"],
-            },
         }
     raise SystemExit(f"unknown queue {queue!r}")
 
@@ -174,18 +165,9 @@ def _spawn(name: str, argv: list, cwd, env: dict) -> subprocess.Popen:
                             env={**os.environ, **env}, start_new_session=True)
 
 
-def _spawn_sidecar(queue: str, leg: dict):
-    side = leg.get("sidecar")
-    if side is None or _up(side["ready"]):
-        return None
-    return _spawn(f"{queue}-sidecar", side["argv"], None, {})
-
-
 def _spawn_image(queue: str, leg: dict) -> subprocess.Popen:
     argv = [_worker_python(queue), "-m", f"local.{queue}.server", "--image-id", "local",
             "--engine-url", f"http://127.0.0.1:{leg['port']}", "--port", str(IMAGE_PORT)]
-    if leg.get("sidecar"):
-        argv += ["--sprite-url", "http://127.0.0.1:8190"]
     return _spawn(f"{queue}-image", argv, str(IMAGES_DIR),
                   {"PYTHONPATH": str(IMAGES_DIR), "SAFETY_MODEL_DIR": SAFETY_MODEL_DIR})
 
@@ -233,14 +215,12 @@ def _stop(name: str, process: subprocess.Popen, grace: float = 25) -> None:
         os.killpg(os.getpgid(process.pid), signal.SIGKILL)
 
 
-def hand_over(held: Optional[str], server, worker, sidecar=None, image=None) -> None:
+def hand_over(held: Optional[str], server, worker, image=None) -> None:
     """Give the card up: the worker first, with time to finish its job, then the server."""
     if worker is not None:
         _stop(f"{held}-worker", worker, grace=HANDOFF_SECONDS)
     if image is not None:
         _stop(f"{held}-image", image)
-    if sidecar is not None:
-        _stop(f"{held}-sidecar", sidecar)
     if server is not None:
         _stop(f"{held}-server", server)
 
@@ -290,11 +270,10 @@ def drain(queue: str, *, keep: bool, ready_timeout: float) -> None:
     print(f"[{queue}] {waiting} job(s) waiting", flush=True)
 
     server = _spawn(f"{queue}-server", leg["argv"], leg["cwd"], leg["env"])
-    worker = sidecar = image = None
+    worker = image = None
     try:
         _await_ready(f"{queue}-server", queue, leg["ready"], server, ready_timeout)
         if not leg.get("boxed"):
-            sidecar = _spawn_sidecar(queue, leg)
             image = _spawn_image(queue, leg)
             worker = _spawn_worker(queue)
 
@@ -321,8 +300,6 @@ def drain(queue: str, *, keep: bool, ready_timeout: float) -> None:
             _stop(f"{queue}-worker", worker)
         if image is not None:
             _stop(f"{queue}-image", image)
-        if sidecar is not None:
-            _stop(f"{queue}-sidecar", sidecar)
         if keep:
             print(f"[{queue}] leaving the model up (--keep)", flush=True)
         else:
@@ -362,7 +339,6 @@ def auto(idle_exit: Optional[float], ready_timeout: float) -> None:
     held: Optional[str] = None
     server: Optional[subprocess.Popen] = None
     worker: Optional[subprocess.Popen] = None
-    sidecar: Optional[subprocess.Popen] = None
     image: Optional[subprocess.Popen] = None
     idle_ticks = {q: 0 for q in QUEUES}
     all_idle_since: Optional[float] = None
@@ -376,13 +352,13 @@ def auto(idle_exit: Optional[float], ready_timeout: float) -> None:
     signal.signal(signal.SIGTERM, _signal)
 
     def _stop_current():
-        nonlocal server, worker, sidecar, image, held
-        hand_over(held, server, worker, sidecar, image)
-        worker = server = sidecar = image = None
+        nonlocal server, worker, image, held
+        hand_over(held, server, worker, image)
+        worker = server = image = None
         held = None
 
     def _start(queue: str):
-        nonlocal server, worker, sidecar, image, held
+        nonlocal server, worker, image, held
         leg = _leg(queue)
         if _up(leg["ready"]):
             # Someone else's server on the port is the server to use, not a reason to stop: auto
@@ -394,7 +370,6 @@ def auto(idle_exit: Optional[float], ready_timeout: float) -> None:
             server = _spawn(f"{queue}-server", leg["argv"], leg["cwd"], leg["env"])
             _await_ready(f"{queue}-server", queue, leg["ready"], server, ready_timeout)
         if not leg.get("boxed"):
-            sidecar = _spawn_sidecar(queue, leg)
             image = _spawn_image(queue, leg)
             worker = _spawn_worker(queue)
         held = queue
@@ -445,7 +420,7 @@ def auto(idle_exit: Optional[float], ready_timeout: float) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("queues", nargs="+", help="decide, llm, image, mesh, video, all, or auto")
+    parser.add_argument("queues", nargs="+", help="decide, llm, image, mesh, all, or auto")
     parser.add_argument("--keep", action="store_true",
                         help="leave the model server up after the queue empties")
     parser.add_argument("--ready-timeout", type=float, default=300.0)

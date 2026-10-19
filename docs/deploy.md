@@ -272,11 +272,6 @@ Settings block (`settings.json` → `runpod`, the full key list in `docs/local_d
   average to a fraction of the truth. A booting pod counts as capacity, so a 5-minute boot can't
   trigger add-forever. Age triggers nothing — an old pending job means the fleet is still
   chewing, and the pod bought for it lands after that job is gone.
-- `queues.video` is the image block with its own `template_id` (the `video-*` tag), the same cards
-  and CUDA floor, and a longer `idle_exit_seconds` (90): an anim's sheet job lands ~20 s after
-  its still renders, and a build asks for its characters together, so a video pod that exits on
-  a short idle re-pays its boot for the next character. Nothing enqueues on it today
-  (`docs/models.md`), so no video pod is ever bought.
 
 Create-time `env` OVERRIDES the template's (verified 2026-09-04: every fleet pod dialed the
 `cp_url` in settings while the templates still named the retired funnel host). The template env

@@ -193,39 +193,6 @@ def test_complete_offloads_each_image_to_the_blob_dir(client, tmp_path, monkeypa
     assert Path(imgs[1]["file"]).read_bytes() == b"png-b"
 
 
-def test_complete_offloads_the_anim_sheet_to_the_blob_dir(client, tmp_path, monkeypatch):
-    monkeypatch.setattr(wq, "_blob_dir", lambda: tmp_path / "blobs")
-
-    workers.worker_created("w1", None, "video", None, RATE)
-    jid = jobs.enqueue_job("video", {"kind": "anim_sheet"})
-    client.post("/worker/claim", json={"queue": "video", "worker_id": "w1"}, headers=_hdr())
-    sheet = b"\x89PNG-sheet-bytes"
-    r = client.post("/worker/complete", json={
-        "job_id": jid, "worker_id": "w1",
-        "result": {"sheet_b64": base64.b64encode(sheet).decode("ascii"),
-                   "manifest": {"cell": {"w": 8, "h": 8}}}}, headers=_hdr())
-    assert r.json()["ok"] is True
-
-    job = jobs.get_job(jid)
-    assert "sheet_b64" not in job["result"]
-    blob = Path(job["result"]["sheet_file"])
-    assert blob == tmp_path / "blobs" / f"{jid}.png"
-    assert blob.read_bytes() == sheet
-    assert job["result"]["manifest"] == {"cell": {"w": 8, "h": 8}}
-
-
-def test_stale_anim_sheet_completion_removes_its_blob(client, tmp_path, monkeypatch):
-    monkeypatch.setattr(wq, "_blob_dir", lambda: tmp_path / "blobs")
-
-    jid = jobs.enqueue_job("video", {"kind": "anim_sheet"})
-    client.post("/worker/claim", json={"queue": "video", "worker_id": "w1"}, headers=_hdr())
-    r = client.post("/worker/complete", json={
-        "job_id": jid, "worker_id": "not-the-claimant",
-        "result": {"sheet_b64": base64.b64encode(b"x").decode("ascii")}}, headers=_hdr())
-    assert r.json()["ok"] is False
-    assert list((tmp_path / "blobs").glob("*")) == []
-
-
 def test_glb_completion_refuses_a_path_shaped_job_id(client, tmp_path, monkeypatch):
     monkeypatch.setattr(wq, "_blob_dir", lambda: tmp_path / "blobs")
     r = client.post("/worker/complete", json={
