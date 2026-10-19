@@ -52,7 +52,7 @@ def test_an_llm_machine_boots_with_the_model_window_flags_and_slots_and_no_card_
 
 def test_only_an_llm_machine_hears_about_the_model():
     p = _provider("runpod", [1.01])
-    _start(_scaler(p), queue="image")
+    _start(_scaler(p), queue="comfy")
     assert p.launch.call_args.args[2].keys() == {
         "CP_URL", "WORKER_TOKEN", "WORKER_QUEUE", "IDLE_EXIT_SECONDS"}
 

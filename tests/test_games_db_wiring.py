@@ -209,10 +209,10 @@ def test_detail_reports_remaining_net_of_queued_work(client):
     user, headers = _user()
     run_id = _make_game(user.id, {"request": "make a moon miner", "title": "Moon Miner"})
     games.charge_game(run_id, 1, 1_000_000)
-    jobs.enqueue_job("image", {}, game_id=run_id, build_id="b1")
+    jobs.enqueue_job("comfy", {}, game_id=run_id, build_id="b1")
 
     detail = client.get(f"/api/games/{run_id}", headers=headers).json()
-    assert detail["budget_pct_remaining"] == (1_000_000 - QUEUE_MICRO_ESTIMATES["image"]) / 1_000_000
+    assert detail["budget_pct_remaining"] == (1_000_000 - QUEUE_MICRO_ESTIMATES["comfy"]) / 1_000_000
 
 
 def test_events_endpoint_replays_the_log(client):
@@ -297,8 +297,8 @@ def test_regenerate_enqueues_one_image_job_with_the_new_prompt(client, monkeypat
     assert r.status_code == 200
     assert r.json() == {"status": "regenerating", "run_id": run_id, "asset_id": "hero"}
 
-    workers.worker_created("w1", None, "image", None, 0.99)
-    job = jobs.claim_job("image", "w1", 60)
+    workers.worker_created("w1", None, "comfy", None, 0.99)
+    job = jobs.claim_job("comfy", "w1", 60)
     assert job is not None and job["game_id"] == run_id and job["batch_id"]
     assert [b["kind"] for b in games.builds_for(run_id) if b["id"] == job["build_id"]] == ["regen"]
     # the merged prompt reaches the positive behind the item quality-tag prefix

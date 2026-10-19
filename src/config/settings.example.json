@@ -44,7 +44,7 @@
           "13.0"
         ]
       },
-      "image": {
+      "comfy": {
         "template_id": "",
         "gpu_type_ids": [
           "NVIDIA GeForce RTX 5090",

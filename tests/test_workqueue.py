@@ -37,9 +37,9 @@ def test_claim_is_fifo_and_exclusive():
 
 
 def test_queues_are_separate():
-    jobs.enqueue_job("image", {"prompt": "cat"})
+    jobs.enqueue_job("comfy", {"prompt": "cat"})
     assert jobs.claim_job("llm", "w1", lease_seconds=60) is None
-    assert jobs.claim_job("image", "w1", lease_seconds=60)["payload"] == {"prompt": "cat"}
+    assert jobs.claim_job("comfy", "w1", lease_seconds=60)["payload"] == {"prompt": "cat"}
 
 
 def test_expired_lease_requeues_and_stale_result_is_dropped():
@@ -112,10 +112,10 @@ def test_unconfigured_token_fails_closed(client, monkeypatch):
 def test_a_claim_never_hands_a_worker_the_jobs_metadata(client):
     """metadata carries the chain (what to enqueue next, what to finalize). It is control-plane
     only — a worker stays a generic executor that knows nothing about assets."""
-    workers.worker_created("w1", None, "image", None, RATE)
-    jobs.enqueue_job("image", {"kind": "comfy_image"}, batch_id="b1",
+    workers.worker_created("w1", None, "comfy", None, RATE)
+    jobs.enqueue_job("comfy", {"kind": "comfy_image"}, batch_id="b1",
                       metadata={"then": {"enqueue": "mesh_from_image"}, "asset_id": "goblin"})
-    r = client.post("/worker/claim", json={"queue": "image", "worker_id": "w1"}, headers=_hdr())
+    r = client.post("/worker/claim", json={"queue": "comfy", "worker_id": "w1"}, headers=_hdr())
     job = r.json()["job"]
     assert set(job) == {"id", "queue", "payload"}
 
@@ -144,9 +144,9 @@ def test_claim_execute_complete_over_http(client):
 def test_complete_offloads_the_glb_to_the_blob_dir(client, tmp_path, monkeypatch):
     monkeypatch.setattr(wq, "_blob_dir", lambda: tmp_path / "blobs")
 
-    workers.worker_created("w1", None, "image", None, RATE)
-    jid = jobs.enqueue_job("image", {"kind": "comfy_mesh"})
-    client.post("/worker/claim", json={"queue": "image", "worker_id": "w1"}, headers=_hdr())
+    workers.worker_created("w1", None, "comfy", None, RATE)
+    jid = jobs.enqueue_job("comfy", {"kind": "comfy_mesh"})
+    client.post("/worker/claim", json={"queue": "comfy", "worker_id": "w1"}, headers=_hdr())
     glb = b"glTF-binary-bytes"
     r = client.post("/worker/complete", json={
         "job_id": jid, "worker_id": "w1",
@@ -163,8 +163,8 @@ def test_complete_offloads_the_glb_to_the_blob_dir(client, tmp_path, monkeypatch
 def test_stale_glb_completion_removes_its_blob(client, tmp_path, monkeypatch):
     monkeypatch.setattr(wq, "_blob_dir", lambda: tmp_path / "blobs")
 
-    jid = jobs.enqueue_job("image", {"kind": "comfy_mesh"})
-    client.post("/worker/claim", json={"queue": "image", "worker_id": "w1"}, headers=_hdr())
+    jid = jobs.enqueue_job("comfy", {"kind": "comfy_mesh"})
+    client.post("/worker/claim", json={"queue": "comfy", "worker_id": "w1"}, headers=_hdr())
     r = client.post("/worker/complete", json={
         "job_id": jid, "worker_id": "not-the-claimant",
         "result": {"glb_b64": base64.b64encode(b"x").decode("ascii")}}, headers=_hdr())
@@ -175,9 +175,9 @@ def test_stale_glb_completion_removes_its_blob(client, tmp_path, monkeypatch):
 def test_complete_offloads_each_image_to_the_blob_dir(client, tmp_path, monkeypatch):
     monkeypatch.setattr(wq, "_blob_dir", lambda: tmp_path / "blobs")
 
-    workers.worker_created("w1", None, "image", None, RATE)
-    jid = jobs.enqueue_job("image", {"kind": "comfy_image"})
-    client.post("/worker/claim", json={"queue": "image", "worker_id": "w1"}, headers=_hdr())
+    workers.worker_created("w1", None, "comfy", None, RATE)
+    jid = jobs.enqueue_job("comfy", {"kind": "comfy_image"})
+    client.post("/worker/claim", json={"queue": "comfy", "worker_id": "w1"}, headers=_hdr())
     r = client.post("/worker/complete", json={
         "job_id": jid, "worker_id": "w1",
         "result": {"prompt_id": "p1", "images": [

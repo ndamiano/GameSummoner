@@ -192,7 +192,7 @@ One worker process per queue, run wherever the GPU is. It dials out, so it needs
 ```bash
 python -m worker.agent --server http://<control-plane>:8000 --token <WORKQUEUE_TOKEN> \
     --queue llm   --target http://localhost:8090     # Basalt on the local 5090; :8001 on an RTX PRO 6000 pod
-python -m worker.agent ... --queue image --target http://localhost:8188   # ComfyUI
+python -m worker.agent ... --queue comfy --target http://localhost:8188   # ComfyUI
 ```
 
 `--target` is the worker's own inference server and should stay bound to `127.0.0.1` — a reachable
@@ -276,7 +276,7 @@ Create-time `env` OVERRIDES the template's (verified 2026-09-04: every fleet pod
 `cp_url` in settings while the templates still named the retired funnel host). The template env
 is what a pod started by hand gets, so keep it current anyway.
 
-First full cycle to watch (image, `max_workers: 1`): enqueue an image job → pod appears in the RunPod
+First full cycle to watch (comfy, `max_workers: 1`): enqueue a comfy job → pod appears in the RunPod
 console with its worker row already `booting` → the worker registers under the worker id it was started with → job done → queue drains → worker exits + deregisters → pod
 disappears (self-terminate or reaper within `stale_worker_seconds`).
 

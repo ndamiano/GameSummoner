@@ -36,7 +36,7 @@ def test_claimed_jobs_leave_the_head_and_name_their_worker():
     held = jobs.claimed_jobs("llm")
     assert [(j["id"], j["worker_id"]) for j in held] == [(first, "w1")]
     assert held[0]["started_at"] <= time.time()
-    assert jobs.claimed_jobs("image") == []
+    assert jobs.claimed_jobs("comfy") == []
 
 
 def test_backlog_sums_the_estimates_of_unfinished_jobs():
@@ -104,7 +104,7 @@ def test_games_exec_seconds_is_everything_the_games_ever_ran():
     games.create_game("g2", "u1")
     games.charge_game("g2", 1, 1_000_000)
     _finish("llm", 10.0, game_id="g1", gpu_type="A")
-    _finish("image", 4.0, game_id="g1", gpu_type="B")
+    _finish("comfy", 4.0, game_id="g1", gpu_type="B")
     _finish("llm", 3.0, game_id="g2", gpu_type="A")
     _finish("llm", 1.0, game_id=None, gpu_type="A")
 
@@ -151,15 +151,15 @@ def test_pod_refusals_count_stock_only_per_window_and_keep_the_latest():
                                               "error": "401 unauthorized"}], "401 unauthorized")
     workers.record_pod_refusal("llm", "stock", [{"volume": "v", "gpu_type_ids": ["a"],
                                               "error": "no instances"}], "no instances")
-    workers.record_pod_refusal("image", "stock", [], "no instances")
+    workers.record_pod_refusal("comfy", "stock", [], "no instances")
     now = time.time()
     with connection.platform_db() as conn:
-        conn.execute("UPDATE pod_refusals SET created_at = ? WHERE queue = 'image'",
+        conn.execute("UPDATE pod_refusals SET created_at = ? WHERE queue = 'comfy'",
                      (now - 2 * 24 * 3600,))
     s = workers.pod_stockout_stats("llm", now)
     assert (s["last_1h"], s["last_24h"], s["last_7d"]) == (1, 1, 1)
     assert abs(s["last_at"] - now) < 5
-    image = workers.pod_stockout_stats("image", now)
+    image = workers.pod_stockout_stats("comfy", now)
     assert (image["last_1h"], image["last_24h"], image["last_7d"]) == (0, 0, 1)
     assert workers.pod_stockout_stats("mesh", now)["last_at"] is None
 

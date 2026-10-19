@@ -34,7 +34,7 @@ IMAGE_PORT = 8700
 
 
 def _worker_python(queue: str) -> str:
-    if queue == "image" and COMFY_PYTHON.exists():
+    if queue == "comfy" and COMFY_PYTHON.exists():
         return str(COMFY_PYTHON)
     return sys.executable
 
@@ -43,8 +43,8 @@ IDLE_TICKS = 3          # empty polls before a queue counts as drained; a contin
                         # once" is not empty
 POLL_SECONDS = 2.0
 
-QUEUES = ["decide", "llm", "image"]
-PRIORITY = {"decide": 0, "llm": 1, "image": 2}
+QUEUES = ["decide", "llm", "comfy"]
+PRIORITY = {"decide": 0, "llm": 1, "comfy": 2}
 # A pending job the control plane's reaper will fail before the held queue drains has to be served
 # first: one card, a build whose turns re-fill the llm queue as fast as it empties, and five
 # sheets waited 30 minutes behind it for a worker that never came (2026-09-04, two of five lost).
@@ -89,7 +89,7 @@ def _leg(queue: str) -> dict:
             "cwd": None,
             "env": {},
         }
-    if queue == "image":
+    if queue == "comfy":
         return {
             "port": 8188,
             "ready": "http://127.0.0.1:8188/system_stats",
@@ -391,7 +391,7 @@ def auto(idle_exit: Optional[float], ready_timeout: float) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("queues", nargs="+", help="decide, llm, image, all, or auto")
+    parser.add_argument("queues", nargs="+", help="decide, llm, comfy, all, or auto")
     parser.add_argument("--keep", action="store_true",
                         help="leave the model server up after the queue empties")
     parser.add_argument("--ready-timeout", type=float, default=300.0)

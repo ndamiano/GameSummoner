@@ -8,7 +8,7 @@ Everything needed to bring the platform up on one box, and the settings that dec
 ## Bring it up
 
 Four things run: the control plane, the frontend, whatever serves the models, and one worker per
-queue (three queues: `decide`, `llm`, `image`). The control plane touches no GPU at all — the
+queue (three queues: `decide`, `llm`, `comfy`). The control plane touches no GPU at all — the
 worker-pull queue is the only transport — so a queue with no worker means every job on it times out.
 
 **Backend** — `source venv/bin/activate && python run.py`
@@ -23,7 +23,7 @@ repo's own box (`local/decide/run.sh`, docker image `gamesummoner/decide-local`)
 engine, contract server and worker in one container.
 
 **One card, three queues, `auto`** — a world build (`compose_world`, or `worldgen.build.build_world`
-by hand) alternates llm and image jobs many times and
+by hand) alternates llm and comfy jobs many times and
 blocks until each completes, so there is no point at which the legs can be drained "one at a time
 by hand". `scripts/local_gpu.py auto` runs the control plane's other half instead: it polls all
 three queues, starts (model + worker) whichever has pending work — favoring the queue it already
@@ -38,11 +38,11 @@ queue, or the card it was holding. The llm leg runs Basalt from `BASALT_DIR` (de
 `~/Documents/basalt`) with the engine flags in `BASALT_CONFIG` (default
 `/var/lib/models/basalt/basalt-iq3s.json`). Run it
 in one terminal alongside `python run.py`; `--idle-exit SECONDS` stops and exits once nothing is
-pending anywhere for that long (default: never). The single-leg (`decide`/`llm`/`image`) and
+pending anywhere for that long (default: never). The single-leg (`decide`/`llm`/`comfy`) and
 `all` modes still exist for draining one queue by hand.
 
 A build that calls `compose_world` needs `auto` for the same reason: the world's stages and the
-build's own turns share the llm queue, and its art rides the image queue while the build keeps
+build's own turns share the llm queue, and its art rides the comfy queue while the build keeps
 writing code.
 
 **CI locally** — `scripts/ci.sh` runs every job in `.github/workflows/ci.yml` (pytest, ruff,

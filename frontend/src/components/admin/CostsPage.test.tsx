@@ -9,7 +9,7 @@ const pod: CostPod = {
     pod_id: 'p-art',
     source: 'runpod',
     tracked: true,
-    queue: 'image',
+    queue: 'comfy',
     gpu_type: 'NVIDIA GeForce RTX 5090',
     usd_per_hour: 1,
     started_at: 1000,

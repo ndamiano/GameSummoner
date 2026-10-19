@@ -70,7 +70,7 @@ def _mesh_from_image(md: Dict, result: Dict) -> Optional[Dict]:
     data = Path(src).read_bytes()
     # keep the mesh's source render: an img2img regenerate needs an image to seed, and a GLB isn't one
     asset_path(md["run_id"], md["asset_id"], "src.png").write_bytes(data)
-    return {"queue": "image",
+    return {"queue": "comfy",
             "payload": build_mesh_payload(base64.b64encode(data).decode("ascii")),
             "metadata": {**md, "then": {"operations": ["decimate"],
                                         "finalize": md["then"]["finalize"]}}}

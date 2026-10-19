@@ -242,7 +242,7 @@ src/
                          `compose_prompt` renders them to the one prose string the samplers see
                          (style, subject, view), so where the style sits is a measurable edit
                          here rather than whatever the builder typed, and `render_kind` draws an
-                         actor as a sprite. Then: enqueue ONE `image`
+                         actor as a sprite. Then: enqueue ONE `comfy`
                          job, record the ask in assets.json, write a
                          PLACEHOLDER at the path (a matted disc for a sprite, an opaque frame for
                          a tile or scene, none for a mesh) and answer with the path. The game
@@ -407,7 +407,7 @@ src/
                          them resumable, which is what lets one world be built in legs. planning/
                          and terrain/ and objects/ are the stages themselves; llm.py, backends/
                          images.py and backends/meshes.py are the only ways out to a card, each a
-                         job on the llm or image queue. Each stage names its own sampling
+                         job on the llm or comfy queue. Each stage names its own sampling
                          temperature (the grounding pass is greedy, the planners are not) and its
                          own mesh seed, and both ride the job all the way to the server.
                          terrain/render.py is both the refinement loop's eyes and the contract:
@@ -478,7 +478,7 @@ and `frontend/` (the React SPA, served same-origin by the API).
 
 ## Where inference happens
 
-Only inside a build, as a chain of `llm` jobs, with art riding the `image` queue off the same
+Only inside a build, as a chain of `llm` jobs, with art riding the `comfy` queue off the same
 transport: sprite, tile and scene renders, and meshes through TRELLIS.2 on the same ComfyUI. The request paths, the completion dispatch and how
 a new stage registers are in `docs/architecture.md` § Request paths.
 

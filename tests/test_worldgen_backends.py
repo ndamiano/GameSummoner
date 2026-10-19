@@ -53,7 +53,7 @@ def test_generate_builds_comfy_image_payload(monkeypatch, tmp_path):
     out = tmp_path / "out.png"
     images_mod.ImageModel().generate("a friendly castle", out, width=64, height=64)
 
-    assert captured["queue"] == "image"
+    assert captured["queue"] == "comfy"
     assert captured["payload"]["kind"] == "comfy_image"
     assert "workflow" in captured["payload"]
     assert captured["payload"]["uploads"] == []
@@ -182,7 +182,7 @@ def test_every_reconstruction_carries_a_seed(monkeypatch, tmp_path):
     seen = []
 
     def fake_run_job(queue, payload, model=None, timeout_seconds=None):
-        assert queue == "image"
+        assert queue == "comfy"
         seeds = {payload["workflow"][node]["inputs"]["seed"] for node in ("ks1", "ks2", "ks4")}
         assert len(seeds) == 1, "every TRELLIS.2 stage samples from the one seed"
         seen.append(seeds.pop())

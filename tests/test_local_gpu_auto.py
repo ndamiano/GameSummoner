@@ -12,59 +12,59 @@ spec.loader.exec_module(local_gpu)
 
 
 def test_nothing_pending_holds_nothing():
-    assert local_gpu.choose_action(None, {"llm": 0, "image": 0}, {}, 3) is None
+    assert local_gpu.choose_action(None, {"llm": 0, "comfy": 0}, {}, 3) is None
 
 
 def test_starts_on_priority_order_when_nothing_held():
-    pending = {"decide": 1, "llm": 0, "image": 2}
+    pending = {"decide": 1, "llm": 0, "comfy": 2}
     assert local_gpu.choose_action(None, pending, {}, 3) == "decide"
 
 
 def test_llm_wins_priority_over_image():
-    pending = {"llm": 1, "image": 2}
+    pending = {"llm": 1, "comfy": 2}
     assert local_gpu.choose_action(None, pending, {}, 3) == "llm"
 
 
 def test_held_queue_keeps_the_card_while_it_has_work():
-    pending = {"llm": 1, "image": 5}
-    idle_ticks = {"llm": 0, "image": 0}
+    pending = {"llm": 1, "comfy": 5}
+    idle_ticks = {"llm": 0, "comfy": 0}
     assert local_gpu.choose_action("llm", pending, idle_ticks, 3) == "llm"
 
 
 def test_a_starving_queue_takes_the_card_from_a_busy_one():
-    pending = {"llm": 1, "image": 5}
-    waits = {"llm": 5.0, "image": local_gpu.STARVE_SECONDS + 1}
-    assert local_gpu.choose_action("llm", pending, {"llm": 0}, 3, waits) == "image"
+    pending = {"llm": 1, "comfy": 5}
+    waits = {"llm": 5.0, "comfy": local_gpu.STARVE_SECONDS + 1}
+    assert local_gpu.choose_action("llm", pending, {"llm": 0}, 3, waits) == "comfy"
     # under the cut-off the held queue keeps the card
-    waits["image"] = local_gpu.STARVE_SECONDS - 1
+    waits["comfy"] = local_gpu.STARVE_SECONDS - 1
     assert local_gpu.choose_action("llm", pending, {"llm": 0}, 3, waits) == "llm"
 
 
 def test_the_longest_starving_queue_wins_and_the_held_one_never_counts():
-    pending = {"decide": 1, "llm": 1, "image": 2}
-    waits = {"llm": 9999.0, "image": local_gpu.STARVE_SECONDS + 50,
+    pending = {"decide": 1, "llm": 1, "comfy": 2}
+    waits = {"llm": 9999.0, "comfy": local_gpu.STARVE_SECONDS + 50,
              "decide": local_gpu.STARVE_SECONDS + 5}
-    assert local_gpu.choose_action("llm", pending, {"llm": 0}, 3, waits) == "image"
+    assert local_gpu.choose_action("llm", pending, {"llm": 0}, 3, waits) == "comfy"
 
 
 def test_held_queue_keeps_card_through_a_momentary_empty():
     # a completion just fired; a continuation may land before the idle-tick limit
-    pending = {"llm": 0, "image": 5}
-    idle_ticks = {"llm": 1, "image": 0}
+    pending = {"llm": 0, "comfy": 5}
+    idle_ticks = {"llm": 1, "comfy": 0}
     assert local_gpu.choose_action("llm", pending, idle_ticks, 3) == "llm"
 
 
 def test_held_queue_yields_once_drained_and_another_has_work():
-    pending = {"llm": 0, "image": 5}
-    idle_ticks = {"llm": 3, "image": 0}
-    assert local_gpu.choose_action("llm", pending, idle_ticks, 3) == "image"
+    pending = {"llm": 0, "comfy": 5}
+    idle_ticks = {"llm": 3, "comfy": 0}
+    assert local_gpu.choose_action("llm", pending, idle_ticks, 3) == "comfy"
 
 
 def test_held_queue_drained_and_nothing_else_pending_releases_the_card():
     # idle-exit timing is handled by the caller (auto loop); the decision function just
     # reports "nothing wants the card"
-    pending = {"llm": 0, "image": 0}
-    idle_ticks = {"llm": 3, "image": 0}
+    pending = {"llm": 0, "comfy": 0}
+    idle_ticks = {"llm": 3, "comfy": 0}
     assert local_gpu.choose_action("llm", pending, idle_ticks, 3) is None
 
 
@@ -100,5 +100,5 @@ def test_a_server_auto_did_not_start_is_never_stopped(monkeypatch):
     """auto reuses a server already on the port, and that one belongs to whoever started it."""
     stopped = []
     monkeypatch.setattr(local_gpu, "_stop", lambda name, proc, grace=25: stopped.append(name))
-    local_gpu.hand_over("image", None, object())
-    assert stopped == ["image-worker"]
+    local_gpu.hand_over("comfy", None, object())
+    assert stopped == ["comfy-worker"]

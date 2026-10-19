@@ -38,7 +38,7 @@ def test_a_served_model_reported_as_a_path_is_stored_as_its_filename():
 
 def test_a_result_without_a_model_keeps_the_requested_one():
     """Image and mesh results carry no model field, and must not blank the column."""
-    job_id = _job(queue="image", model="sdxl")
+    job_id = _job(queue="comfy", model="sdxl")
 
     jobs.complete_job(job_id, "w1", {"images": []}, None, exec_seconds=1.0)
 

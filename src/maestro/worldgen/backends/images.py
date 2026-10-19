@@ -166,7 +166,7 @@ class ImageModel:
     def run(self, graph: dict[str, Any], *, uploads: list[dict] | None = None) -> list[bytes]:
         """Queue `graph`, wait for it, and return the images it saved, admitted only."""
         payload = {"kind": "comfy_image", "workflow": graph, "uploads": uploads or []}
-        job = run_job("image", payload, timeout_seconds=self.timeout)
+        job = run_job("comfy", payload, timeout_seconds=self.timeout)
         if job.get("status") != "done":
             raise ImageModelError(job.get("error") or "image job failed")
         result = job.get("result") or {}

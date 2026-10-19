@@ -44,7 +44,7 @@ def media(run_dir):
 
 def _image_jobs():
     with connection.platform_db() as conn:
-        rows = conn.execute("SELECT * FROM jobs WHERE queue = 'image' ORDER BY id").fetchall()
+        rows = conn.execute("SELECT * FROM jobs WHERE queue = 'comfy' ORDER BY id").fetchall()
     return [jobs._job_dict(r) for r in rows]
 
 
@@ -288,7 +288,7 @@ def test_a_top_up_resumes_a_mesh_from_the_source_render_it_already_has(run_dir):
 
     assets.start_from_manifest(RUN, run_dir, "b1")
 
-    by_kind = {j["payload"]["kind"]: j for j in _jobs("image")}
+    by_kind = {j["payload"]["kind"]: j for j in _jobs("comfy")}
     assert sorted(by_kind) == ["comfy_image", "comfy_mesh"], "no second image render was paid for"
     top_up = by_kind["comfy_mesh"]
     assert top_up["metadata"]["then"]["operations"] == ["decimate"]
@@ -300,7 +300,7 @@ def test_a_mesh_with_no_source_render_still_starts_at_the_image(run_dir):
 
     assets.start_from_manifest(RUN, run_dir, "b1")
 
-    assert [j["payload"]["kind"] for j in _jobs("image")] == ["comfy_image", "comfy_image"]
+    assert [j["payload"]["kind"] for j in _jobs("comfy")] == ["comfy_image", "comfy_image"]
 
 
 # ── The structured ask: subject + style + details, prose composed here ─────────────────────

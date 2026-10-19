@@ -96,9 +96,9 @@ def test_a_failed_job_does_not_debit_the_game():
     """The user got nothing out of an OOM or a 500. It burned real GPU time, but that is our cost
     to eat, not theirs to pay."""
     _game()
-    job_id = jobs.enqueue_job("image", {}, game_id="g1", build_id="b1")
-    workers.worker_created("w1", None, "image", None, RATE)
-    jobs.claim_job("image", "w1", 60)
+    job_id = jobs.enqueue_job("comfy", {}, game_id="g1", build_id="b1")
+    workers.worker_created("w1", None, "comfy", None, RATE)
+    jobs.claim_job("comfy", "w1", 60)
     jobs.complete_job(job_id, "w1", None, "Status 500: OOM", exec_seconds=180.0)
 
     assert games.game("g1")["spent_micros"] == 0
@@ -125,9 +125,9 @@ def test_a_partial_failure_is_not_billed_pro_rata():
     """A job that ran a long time and THEN failed is still a non-delivery — the elapsed seconds
     are not a partial entitlement."""
     _game()
-    job_id = jobs.enqueue_job("image", {}, game_id="g1", build_id="b1")
-    workers.worker_created("w1", None, "image", None, RATE)
-    jobs.claim_job("image", "w1", 600)
+    job_id = jobs.enqueue_job("comfy", {}, game_id="g1", build_id="b1")
+    workers.worker_created("w1", None, "comfy", None, RATE)
+    jobs.claim_job("comfy", "w1", 600)
     jobs.complete_job(job_id, "w1", {"partial": True}, "died at 95%", exec_seconds=900.0)
 
     assert games.game("g1")["spent_micros"] == 0
@@ -241,10 +241,10 @@ def test_run_scope_attributes_and_gates_every_producer(monkeypatch):
                         lambda jid: {"status": "done", "result": {}})
 
     with run_scope("g1", "b1"):
-        for queue in ("llm", "image", "decide"):
+        for queue in ("llm", "comfy", "decide"):
             queue_client.run_job(queue, {})
 
-    assert seen == [("llm", "g1"), ("image", "g1"), ("decide", "g1")]
+    assert seen == [("llm", "g1"), ("comfy", "g1"), ("decide", "g1")]
 
 
 def test_refused_job_comes_back_as_a_failed_job_not_an_exception():

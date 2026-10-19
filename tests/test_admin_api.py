@@ -45,15 +45,15 @@ def test_next_lists_pending_jobs_in_claim_order_with_their_wait(app_client):
     games.create_game("g1", "u1")
     games.charge_game("g1", 1, 1_000_000)
     build = games.create_build("g1")
-    first = jobs.enqueue_job("image", {}, game_id="g1", build_id=build)
-    second = jobs.enqueue_job("image", {}, game_id="g1", build_id="b1")
+    first = jobs.enqueue_job("comfy", {}, game_id="g1", build_id=build)
+    second = jobs.enqueue_job("comfy", {}, game_id="g1", build_id="b1")
 
-    image, totals = _queue(app_client, "image")
+    image, totals = _queue(app_client, "comfy")
     assert [j["id"] for j in image["next"]] == [first, second]
     assert image["next"][0]["game_id"] == "g1"
     assert image["next"][0]["build_id"] == build
     assert 0 <= image["next"][0]["waiting_seconds"] < 5
-    assert image["next"][0]["est_seconds"] == QUEUE_SECONDS_ESTIMATES["image"]
+    assert image["next"][0]["est_seconds"] == QUEUE_SECONDS_ESTIMATES["comfy"]
     assert (totals["pending"], totals["claimed"]) == (2, 0)
 
 
@@ -61,29 +61,29 @@ def test_next_is_capped_at_ten(app_client):
     games.create_game("g1", "u1")
     games.charge_game("g1", 1, 10_000_000)
     for _ in range(12):
-        jobs.enqueue_job("image", {}, game_id="g1", build_id="b1")
-    image, _ = _queue(app_client, "image")
+        jobs.enqueue_job("comfy", {}, game_id="g1", build_id="b1")
+    image, _ = _queue(app_client, "comfy")
     assert (image["pending"], len(image["next"])) == (12, 10)
 
 
 def test_workers_report_state_and_the_job_they_hold(app_client):
     games.create_game("g1", "u1")
     games.charge_game("g1", 1, 1_000_000)
-    jid = jobs.enqueue_job("image", {}, game_id="g1", build_id="b1")
-    workers.worker_created("busy", "p1", "image", "BIG", 0.99)
-    workers.worker_created("idle", None, "image", "NVIDIA GeForce RTX 5090", 0.0)
-    workers.worker_seen("busy", "image", gpu_type="BIG", source="runpod")
-    workers.worker_seen("idle", "image", gpu_type="NVIDIA GeForce RTX 5090", source="local")
-    jobs.claim_job("image", "busy", 60)
+    jid = jobs.enqueue_job("comfy", {}, game_id="g1", build_id="b1")
+    workers.worker_created("busy", "p1", "comfy", "BIG", 0.99)
+    workers.worker_created("idle", None, "comfy", "NVIDIA GeForce RTX 5090", 0.0)
+    workers.worker_seen("busy", "comfy", gpu_type="BIG", source="runpod")
+    workers.worker_seen("idle", "comfy", gpu_type="NVIDIA GeForce RTX 5090", source="local")
+    jobs.claim_job("comfy", "busy", 60)
 
-    image, totals = _queue(app_client, "image")
+    image, totals = _queue(app_client, "comfy")
     by_id = {w["id"]: w for w in image["workers"]}
     assert by_id["busy"]["state"] == "busy"
     assert by_id["busy"]["pod_id"] == "p1"
     assert by_id["busy"]["job"]["id"] == jid
     assert by_id["busy"]["job"]["game_id"] == "g1"
     assert 0 <= by_id["busy"]["job"]["running_seconds"] < 5
-    assert by_id["busy"]["job"]["est_seconds"] == QUEUE_SECONDS_ESTIMATES["image"]
+    assert by_id["busy"]["job"]["est_seconds"] == QUEUE_SECONDS_ESTIMATES["comfy"]
     assert by_id["idle"]["state"] == "idle"
     assert by_id["idle"]["job"] is None
     assert (image["workers_live"], image["claimed"], image["pending"]) == (2, 1, 0)
@@ -120,8 +120,8 @@ def test_costs_split_a_reused_pod_id_into_its_lives(app_client, monkeypatch):
     lives = {"w-tue": ("qwieur", 2.0, now - 3 * day), "w-wed": ("qwieur", 1.0, now - day),
              "w-old": ("p-old", 1.0, now - 10 * day)}
     for worker, (pod, rate, started) in lives.items():
-        workers.worker_created(worker, pod, "image", "NVIDIA GeForce RTX 5090", rate)
-        workers.worker_seen(worker, "image", gpu_type="NVIDIA GeForce RTX 5090",
+        workers.worker_created(worker, pod, "comfy", "NVIDIA GeForce RTX 5090", rate)
+        workers.worker_seen(worker, "comfy", gpu_type="NVIDIA GeForce RTX 5090",
                              source="runpod")
         with connection.platform_db() as conn:
             conn.execute("UPDATE workers SET started_at = ? WHERE id = ?", (started, worker))
@@ -143,8 +143,8 @@ def test_costs_split_a_reused_pod_id_into_its_lives(app_client, monkeypatch):
                                          ("w-wed", "g1", None, 360.0),
                                          ("w-wed", "g1", "boom", 36.0),
                                          ("w-wed", None, None, 72.0)]:
-        jobs.enqueue_job("image", {}, game_id=game_id, build_id=build)
-        claimed = jobs.claim_job("image", worker, 60)
+        jobs.enqueue_job("comfy", {}, game_id=game_id, build_id=build)
+        claimed = jobs.claim_job("comfy", worker, 60)
         jobs.complete_job(claimed["id"], worker, None if error else {"ok": True}, error,
                               exec_seconds=secs)
     games.build_finished(build, "built")

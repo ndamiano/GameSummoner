@@ -114,7 +114,7 @@ def _build_with_art():
     bid = games.create_build("g1", kind="build")
     turn = jobs.enqueue_job("llm", {}, game_id="g1", build_id=bid,
                              metadata={"stage": "build", "run_id": "g1", "build_id": bid})
-    art = jobs.enqueue_job("image", {}, game_id="g1", build_id=bid, batch_id="b",
+    art = jobs.enqueue_job("comfy", {}, game_id="g1", build_id=bid, batch_id="b",
                             metadata={"run_id": "g1", "asset_id": "goblin"})
     return bid, turn, art
 
@@ -138,7 +138,7 @@ def test_a_claimed_turn_is_left_to_its_worker():
 def test_queue_has_work_sees_pending_and_lapsed_leases():
     jobs.enqueue_job("llm", {"k": 1})
     assert jobs.queue_has_work("llm") is True
-    assert jobs.queue_has_work("image") is False
+    assert jobs.queue_has_work("comfy") is False
 
     job = jobs.claim_job("llm", "w1", lease_seconds=60)
     assert jobs.queue_has_work("llm") is False
@@ -200,12 +200,12 @@ def test_a_responses_wire_turn_elides_to_the_same_fields():
 def test_an_art_row_keeps_its_prompt_and_render_record_and_drops_the_blobs():
     games.create_game("g1", "u1")
     games.charge_game("g1", 10, 144_000)
-    job_id = jobs.enqueue_job("image", {"kind": "comfy_image",
+    job_id = jobs.enqueue_job("comfy", {"kind": "comfy_image",
                                          "workflow": {"p": {"inputs": {"text": "a red dragon"}}},
                                          "uploads": [{"name": "init.png", "b64": "AAAA"}]},
                                game_id="g1", build_id="b1")
-    workers.worker_created("w1", None, "image", None, 0.99)
-    jobs.claim_job("image", "w1", 60)
+    workers.worker_created("w1", None, "comfy", None, 0.99)
+    jobs.claim_job("comfy", "w1", 60)
     jobs.complete_job(job_id, "w1", {"model": "sdxl", "images": [
         {"file": "/blobs/x.png", "safety": {"scores": {"NSFW": 0.1}}, "png_b64": "BBBB"}]},
         None, 5.0)
@@ -257,7 +257,7 @@ def test_every_failed_path_leaves_measurements_not_words():
 def test_a_failed_batch_render_drops_its_blob():
     games.create_game("g1", "u1")
     games.charge_game("g1", 10, 144_000)
-    job_id = jobs.enqueue_job("image", {"kind": "comfy_mesh", "workflow": {},
+    job_id = jobs.enqueue_job("comfy", {"kind": "comfy_mesh", "workflow": {},
                                          "uploads": [{"name": "s.png", "b64": "A" * 5000}]},
                                game_id="g1", build_id="b1", batch_id="batch1")
     assert jobs.abandon_pending_batch_jobs("g1", "budget") == 1

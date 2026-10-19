@@ -7,14 +7,14 @@ MICRO = 1_000_000
 # p90 of jobs.exec_seconds on prod, read 2026-09-11.
 QUEUE_SECONDS_ESTIMATES = {
     "llm":   31,
-    "image": 33,
+    "comfy": 33,
     "decide": 20,
 }
 
 # The most expensive card each queue's pods are created on, priced at RunPod's rate.
 QUEUE_USD_PER_HOUR = {
     "llm":   2.21,   # RTX PRO 6000 Blackwell
-    "image": 1.01,   # RTX 5090
+    "comfy": 1.01,   # RTX 5090
     "decide": 2.21,  # RTX PRO 6000 Blackwell
 }
 

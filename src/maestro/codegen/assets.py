@@ -275,7 +275,7 @@ def request_media(run_id: str, run_dir, build_id: str, asset_id: str, subject: s
                                       "draw this one with code instead"}
     then = _then_for(rkind)
     try:
-        jobs.enqueue_job("image", payload, game_id=run_id, build_id=build_id,
+        jobs.enqueue_job("comfy", payload, game_id=run_id, build_id=build_id,
                              batch_id=uuid.uuid4().hex[:16],
                              metadata={"run_id": run_id, "asset_id": asset_id, "kind": rkind,
                                        "then": then})
@@ -345,7 +345,7 @@ def _enqueue_batch(run_id: str, entries: List[Dict], build_id: str) -> str:
             logger.warning("assets %s: %s blocked by the safety filter — not sent", run_id, e["id"])
             continue
         try:
-            jobs.enqueue_job("image", payload, game_id=run_id, build_id=build_id,
+            jobs.enqueue_job("comfy", payload, game_id=run_id, build_id=build_id,
                                  batch_id=batch_id,
                                  metadata={"run_id": run_id, "asset_id": e["id"],
                                            "kind": kind, "then": then})
@@ -393,7 +393,7 @@ def regenerate_asset(run_id: str, asset_id: str, note: str, mode: str = "full") 
     if payload is None:
         return {"ok": False, "error": "the prompt was blocked by the safety filter"}
     batch_id = uuid.uuid4().hex[:16]
-    jobs.enqueue_job("image", payload, game_id=run_id, build_id=build_id, batch_id=batch_id,
+    jobs.enqueue_job("comfy", payload, game_id=run_id, build_id=build_id, batch_id=batch_id,
                          metadata={"run_id": run_id, "asset_id": asset_id,
                                    "kind": kind, "then": _then_for(kind, "art_build")})
     _update(state.run_dir, asset_id, defect=None, refused=None)

@@ -93,7 +93,7 @@ class MeshModel:
 
     def _one(self, image: Path, out_dir: Path, target: int, seed: int) -> Path | None:
         payload = build_mesh_payload(base64.b64encode(image.read_bytes()).decode("ascii"), seed)
-        job = run_job("image", payload, timeout_seconds=self.timeout)
+        job = run_job("comfy", payload, timeout_seconds=self.timeout)
         if job.get("status") != "done":
             raise MeshModelError(job.get("error") or "mesh job failed")
         result = job.get("result") or {}

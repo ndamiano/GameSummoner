@@ -44,7 +44,7 @@ def test_runpod_ladder_is_the_preferred_card_alone_then_the_list_volume_by_volum
             for r in provider.rungs("llm")] == [
         ("vol-eu", [WK], 1.89), ("vol-eu", [WK, SE], 2.19),
         ("vol-us", [WK], 1.89), ("vol-us", [WK, SE], 2.19)]
-    assert provider.rungs("image") == []
+    assert provider.rungs("comfy") == []
 
 
 def test_a_queue_with_policy_but_no_cards_is_served_only_by_the_other_providers():
@@ -104,7 +104,7 @@ def test_ec2_ladder_is_the_clients_offers_over_the_regions_that_have_an_ami():
         "queue": "llm", "region": "eu-north-1", "zone": "eu-north-1a",
         "instance_type": "g7e.2xlarge", "market": "spot", "usd_per_hour": 1.37})]
     client.offers.assert_called_once_with(AWS["queues"]["llm"]["amis"], ["g7e.2xlarge"], ["spot"])
-    assert provider.rungs("image") == []
+    assert provider.rungs("comfy") == []
 
 
 def test_ec2_launch_tells_the_box_who_it_is_and_the_id_carries_the_region():
