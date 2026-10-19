@@ -2492,3 +2492,47 @@ read-only design; revisit only if a build ticks rows it never built and ships br
 the design beyond the DoD.
 
 **Details.** `labs/design-map/README.md`, `labs/dod-checkoff/README.md`.
+
+====================================================================================================
+
+## 2026-10-13 — fresh-context refine passes on a design (local 5090, Flash-Next IQ3 "basalt" via coding-agent)
+
+**Question.** The 2026-09-14 verdict left content the spec does not settle to the builder. If a
+model in a fresh context is asked what it needs to build the game, and to decide it, does the
+design it leaves behind build a better game? Arms differ only in N, the refine passes after each
+stage.
+
+**Setup.** No GameSummoner path: Nick's `coding-agent` with `--shell` (bash in bubblewrap, no
+network), each pass a fresh process with one prompt file. One seed design from the one-input
+roguelike ask (CADENCE: tap count is the verb, tap rate is the intensity), then "Add a visual
+design", "Add sound design", "Build the game", with "What do you need to build the game in /
+what is unclear about visuals, sound in DESIGN.md? Make decisions and update the markdown" as the
+refine pass. A driver sends "continue" when a basalt judge reads a turn's end as an announcement
+(the harness ends a turn on any text-only reply). One commit per pass. Nick played both builds.
+
+**Result.**
+
+| arm | design lines | build | calls | own tests | hand fixes | Nick |
+|---|---:|---|---:|---|---:|---|
+| r0, N=0 | 338 → 800 | Python, PIL + tkinter | 199, cap 200 | claimed green; 3 suites fail on rerun | 1 crash (idle Brace) + 1 launch | stuck by room 3 |
+| r1, N=1 | 338 → 1507 | browser, plain JS | 535, cap 2000 | 59/59, reproduces | 1 crash (first cue) | complete and playable; pivot facing reads as random |
+
+The design refine pass (3 min, 11 calls) found contradictions any literal build would ship: every
+multi-press burst was Frantic by construction (commit window 260 ms vs tiers at 260/700 ms), idle
+Brace farmed Guard forever, Guard and "step into a monster" were undefined. It also picked the
+stack; r0's came from a PIL figure script the visual pass wrote. The visual and sound refines
+turned into measurement: pixel coordinates, contrast ratios, dBFS to a tenth, a cue synthesiser
+whose WAV writer dropped the samples (44-byte files, uncaught by the sound refine). Pivot
+feedback, Nick's main complaint, got one table row. Every design pass also wrote code the prompt
+did not ask for. Both builds crashed only in the one layer they could not run headless (the Tk
+window, the WebAudio shell).
+
+**Verdict.** Inconclusive on the question: one game per arm, and the round cap, prompt wording
+and driver changed between arms, so r1 being playable cannot be pinned on refinement. Refine passes
+improve what the model can measure, not what a player feels.
+
+**Ruling.** Lab closed, nothing merged. Worth testing on the prod harness: one fresh-context
+"what do you need to build this" pass on the design, counted by contradictions found and runs
+that play through.
+
+**Details.** `labs/refine-passes/README.md`, one commit per pass in the labs repo.
