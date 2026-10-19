@@ -124,3 +124,19 @@ describe('GameView after a failed build', () => {
         expect(await screen.findByText(/gone awry\. you can play what's here/i)).toBeTruthy()
     })
 })
+
+describe('GameView during a build', () => {
+    it('offers Pause and shows the summoning pill for the status the server reports', async () => {
+        mount(detail({ building: true, status: 'building' }))
+
+        expect(await screen.findByRole('button', { name: /^pause$/i })).toBeTruthy()
+        expect(screen.getByText('summoning')).toBeTruthy()
+    })
+
+    it('swaps Pause for Resume while paused', async () => {
+        mount(detail({ building: true, status: 'paused' }))
+
+        expect(await screen.findByRole('button', { name: /^resume$/i })).toBeTruthy()
+        expect(screen.queryByRole('button', { name: /^pause$/i })).toBeNull()
+    })
+})

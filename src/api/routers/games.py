@@ -406,7 +406,7 @@ async def resume_game(run_id: str, user: User = Depends(get_current_user)):
     _require_compute(run_id)
     if build_chain.is_active(run_id):
         await asyncio.to_thread(build_chain.resume, run_id)
-        return {"run_id": run_id, "status": "running"}
+        return {"run_id": run_id, "status": "building"}
     if not games.is_charged(run_id):
         raise HTTPException(status_code=409, detail="no build to resume for this run")
     # A finished/failed build has no cursor to re-drive: start a fresh one over the on-disk game.

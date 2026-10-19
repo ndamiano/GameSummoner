@@ -16,7 +16,7 @@ import { useConsoleReports } from './useConsoleReports'
 import { budgetFraction, shouldAdoptPrompt, stageFor } from './state'
 
 const STATUS_PILL: Record<string, { label: string; tone: 'live' | 'wait' | 'idle' }> = {
-    running: { label: 'summoning', tone: 'wait' },
+    building: { label: 'summoning', tone: 'wait' },
     fixing: { label: 'mending', tone: 'wait' },
     changing: { label: 'changing', tone: 'wait' },
     paused: { label: 'paused', tone: 'idle' },
@@ -102,11 +102,11 @@ export const GameView: React.FC<{ runId: string; onChanged: () => void; onBack: 
                 case 'prompt_updated':
                     load(); break
                 case 'build_started':
-                    setBuilding(true); setStatus('running'); break
+                    setBuilding(true); setStatus('building'); break
                 case 'build_paused':
                     setStatus('paused'); break
                 case 'build_resumed':
-                    setStatus('running'); break
+                    setStatus('building'); break
                 case 'build_done':
                     setBuilding(false); load(); onChanged(); break
                 case 'assets_done':
@@ -129,7 +129,7 @@ export const GameView: React.FC<{ runId: string; onChanged: () => void; onBack: 
     // `fresh` empties the game folder first. A retry otherwise opens on the last attempt's files,
     // which the model reads and believes — and then re-asks for art it already has.
     const startBuild = async (fresh: boolean) => {
-        setActing(true); setBuilding(true); setStatus('running'); closePlay()
+        setActing(true); setBuilding(true); setStatus('building'); closePlay()
         try {
             await (fresh ? api.regenerateGame : api.buildGame)(runId, promptText)
             track('build_started', { run_id: runId, source: 'game', fresh })
@@ -145,7 +145,7 @@ export const GameView: React.FC<{ runId: string; onChanged: () => void; onBack: 
     const regenerate = () => startBuild(true)
     const pause = () => { setStatus('paused'); act(() => api.pauseGame(runId), 'Pause failed', false) }
     const buff = () => act(() => api.resumeGame(runId), 'Buff failed')
-    const resume = () => { setStatus('running'); act(() => api.resumeGame(runId), 'Resume failed', false) }
+    const resume = () => { setStatus('building'); act(() => api.resumeGame(runId), 'Resume failed', false) }
     const stop = () => act(() => api.stopGame(runId), 'Stop failed', false)
     const renderArt = () => act(async () => { setRenderPending(true); await api.renderAssets(runId) }, 'Render failed', false)
     const sendFix = (note: string, source = 'note') => {
@@ -200,7 +200,7 @@ export const GameView: React.FC<{ runId: string; onChanged: () => void; onBack: 
                     </div>
 
                     <div className="flex gap-2 flex-wrap items-center">
-                        {building && (status === 'running' || status === 'fixing' || status === 'changing') && (
+                        {building && status !== 'paused' && (
                             <Button onClick={pause} disabled={acting}>Pause</Button>
                         )}
                         {building && status === 'paused' && (
