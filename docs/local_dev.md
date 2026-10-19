@@ -8,7 +8,7 @@ Everything needed to bring the platform up on one box, and the settings that dec
 ## Bring it up
 
 Four things run: the control plane, the frontend, whatever serves the models, and one worker per
-queue (four queues: `decide`, `llm`, `image`, `mesh`). The control plane touches no GPU at all — the
+queue (three queues: `decide`, `llm`, `image`). The control plane touches no GPU at all — the
 worker-pull queue is the only transport — so a queue with no worker means every job on it times out.
 
 **Backend** — `source venv/bin/activate && python run.py`
@@ -22,11 +22,11 @@ refused, so a bare `python -m worker.agent` never lands a job. `decide` runs the
 repo's own box (`local/decide/run.sh`, docker image `gamesummoner/decide-local`), which carries its
 engine, contract server and worker in one container.
 
-**One card, four queues, `auto`** — a world build (`compose_world`, or `worldgen.build.build_world`
-by hand) alternates llm/image/mesh jobs many times and
+**One card, three queues, `auto`** — a world build (`compose_world`, or `worldgen.build.build_world`
+by hand) alternates llm and image jobs many times and
 blocks until each completes, so there is no point at which the legs can be drained "one at a time
 by hand". `scripts/local_gpu.py auto` runs the control plane's other half instead: it polls all
-four queues, starts (model + worker) whichever has pending work — favoring the queue it already
+three queues, starts (model + worker) whichever has pending work — favoring the queue it already
 holds so a momentary empty doesn't thrash it, except that a queue whose oldest job has waited
 ten minutes takes the card, because the control plane fails a job nobody claims in thirty and a
 build's turns can keep the llm queue non-empty for an hour — and stops what it started on
@@ -38,11 +38,11 @@ queue, or the card it was holding. The llm leg runs Basalt from `BASALT_DIR` (de
 `~/Documents/basalt`) with the engine flags in `BASALT_CONFIG` (default
 `/var/lib/models/basalt/basalt-iq3s.json`). Run it
 in one terminal alongside `python run.py`; `--idle-exit SECONDS` stops and exits once nothing is
-pending anywhere for that long (default: never). The single-leg (`llm`/`image`/`mesh`) and
+pending anywhere for that long (default: never). The single-leg (`decide`/`llm`/`image`) and
 `all` modes still exist for draining one queue by hand.
 
 A build that calls `compose_world` needs `auto` for the same reason: the world's stages and the
-build's own turns share the llm queue, and its art rides the other two while the build keeps
+build's own turns share the llm queue, and its art rides the image queue while the build keeps
 writing code.
 
 **CI locally** — `scripts/ci.sh` runs every job in `.github/workflows/ci.yml` (pytest, ruff,
@@ -122,26 +122,8 @@ hurt.
 
 Local: `comfy-start`. Over the network: run `main.py --listen 0.0.0.0` from the Comfy checkout.
 
-### Meshes — TRELLIS
-
-```
-<trellis venv>/bin/python src/tools/trellis_server.py \
-  --repo <trellis repo> --weights <trellis weights> --stage-dir ""
-```
-
-A one-GPU box holds ComfyUI or TRELLIS, not both at once — which is why an asset top-up resumes a
-mesh from its `<id>.src.png` rather than restarting at the image leg.
-
-Two launch flags decide whether the server fits in HOST RAM, and a desktop that runs out of it
-loses the whole user session to the OOM killer, not just the build (measured twice, 2026-08-21:
-a 36 GB python killed at the mesh stage, Chromium and the desktop with it):
-
-- `--stage-dir ""` — by default the server copies its weights into `/dev/shm` (the pod trick
-  against a network filesystem dropping pages). On a local disk that copy is 14 GB of tmpfs that
-  stays resident for as long as the box is up. Empty means load from `--weights`.
-- leave `--ptype` at its `512` default. The server warms `{ptype, "512"}`, so `1024_cascade`
-  loads TWO pipelines and the process peaks near 36 GB of host RAM. `scripts/local_gpu.py`
-  launches with both settings.
+Meshes render here too: `src/config/workflows/img2mesh.json` is TRELLIS.2 on ComfyUI's native
+nodes, which need v0.39.2 and the four `Comfy-Org/TRELLIS.2` weights (`docs/models.md`).
 
 ---
 

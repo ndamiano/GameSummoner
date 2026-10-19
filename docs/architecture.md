@@ -32,8 +32,7 @@ Our queues are simple queries on the jobs table in our sql database.
 | queue | work | target |
 |---|---|---|
 | `llm` | one build turn | any OpenAI-shaped server |
-| `image` | one image render | ComfyUI |
-| `mesh` | image → 3D | TRELLIS |
+| `image` | one image render, or image → 3D through TRELLIS.2 | ComfyUI |
 
 ### Workers
 

@@ -17,7 +17,7 @@ the ones we reject, because "why we didn't switch" is the expensive thing to rel
 | Sprites, scenes, mesh subjects, scene-chain subjects | Qwen-Image 2512 | ComfyUI | `workflows/txt2img_subject.json` |
 | Scene-chain terrain | DreamShaperXL Turbo v2.1 (masked img2img) | ComfyUI | graph built in `scenegen/paint.py` |
 | Scene-chain embed | Qwen-Image-Edit 2511 | ComfyUI | `workflows/imgedit_scene.json` |
-| 3D meshes | TRELLIS 2 | home-rolled runtime, `engines/trellis/trellis_server.py` in gamesummoner-images | — |
+| 3D meshes | TRELLIS 2 | ComfyUI native nodes, `src/config/workflows/img2mesh.json` | — |
 | Render safety scoring | small timm ViT, locally exported | in the image worker | `scripts/export_safety_model.py` |
 | Sound effects, music, voice | **nothing** | — | — |
 
@@ -108,7 +108,7 @@ whole category we do not produce at all, and it is wanted.
   1024 cascade: finer geometry than our `512` tier, kept through a 15K decimation, at ~55 s a
   mesh resident against ~10 s, no 512 tier, one subject in five exported fully metallic, and a
   gated non-commercial background remover in its default pipeline. Multi-view conditioning
-  (Sep 2026) needs several posed views of one object, which nothing upstream of the mesh queue
+  (Sep 2026) needs several posed views of one object, which nothing upstream of the mesh job
   produces. Its `--low_vram` staging is the useful part: it fits a 1024 cascade on a 5090,
   which our own server cannot — see the verdict in `docs/experiments.md`.
 - **Audio: surveyed and measured, deliberately not implemented** (2026-08-01, 58 generations —

@@ -255,7 +255,7 @@ src/
                          scene keeps the whole frame because it IS the background, a tile is
                          quilted seamless (`tools/quilting.py`, in `asset_chain._save_flat` —
                          soft, a quilt that throws saves the raw render), mesh chains image →
-                         TRELLIS (its image leg is a Qwen-Image subject render, framed and
+                         TRELLIS.2 on the same ComfyUI box (its image leg is a Qwen-Image subject render, framed and
                          matted, in a hand-painted game-asset style the player never sees —
                          TRELLIS lifts a stylized cut-out far better than a photo or an anime
                          sprite, `docs/experiments.md` 2026-09-03) and lands normalized to 1 unit at its longest side, which the
@@ -279,9 +279,8 @@ src/
                          is still missing) and the single-asset regenerate — the user's text is a
                          CHANGE NOTE merged (one small llm call) with the entry's original prompt,
                          so "give him a red cape" keeps the goblin; img2img seeds from the render.
-                         A top-up RESUMES a mesh from its `<id>.src.png` if one is there: the chain
-                         needs ComfyUI and then TRELLIS, and a one-GPU box holds one at a time, so
-                         always restarting at the image leg never reached the second half.
+                         A top-up RESUMES a mesh from its `<id>.src.png` if one is there, so the
+                         subject render already paid for is not drawn again.
       design.py          the DESIGN STAGE — decisions, then one writer, between the user's words
                          and the build. One `decide` job asks JEV (a calibrated decision model, its
                          own queue) every decision in prompts/design/decisions.json in order, each
@@ -408,7 +407,7 @@ src/
                          them resumable, which is what lets one world be built in legs. planning/
                          and terrain/ and objects/ are the stages themselves; llm.py, backends/
                          images.py and backends/meshes.py are the only ways out to a card, each a
-                         job on the llm, image or mesh queue. Each stage names its own sampling
+                         job on the llm or image queue. Each stage names its own sampling
                          temperature (the grounding pass is greedy, the planners are not) and its
                          own mesh seed, and both ride the job all the way to the server.
                          terrain/render.py is both the refinement loop's eyes and the contract:
@@ -479,8 +478,8 @@ and `frontend/` (the React SPA, served same-origin by the API).
 
 ## Where inference happens
 
-Only inside a build, as a chain of `llm` jobs, with art riding two more queues off the same
-transport: `image` (sprite, tile, scene and mesh renders) and `mesh` (TRELLIS itself). The request paths, the completion dispatch and how
+Only inside a build, as a chain of `llm` jobs, with art riding the `image` queue off the same
+transport: sprite, tile and scene renders, and meshes through TRELLIS.2 on the same ComfyUI. The request paths, the completion dispatch and how
 a new stage registers are in `docs/architecture.md` § Request paths.
 
 ---

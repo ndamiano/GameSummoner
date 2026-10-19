@@ -103,7 +103,7 @@ src/
                 staging, assets, error_gate, snapshots, prompts/, run (CLI)
     worldgen/   the 3D world behind compose_world
   scaler/       the autoscaler: rents RunPod and EC2 GPU pods per queue
-  tools/        ComfyUI, TRELLIS, quilting, S3, DB backup, mailer, safety
+  tools/        ComfyUI, quilting, S3, DB backup, mailer, safety
   workqueue/    the enqueue-side client + the queue reaper
 runtime/
   vendor/       three.js + loaders + world.js + lib/, copied into every game folder at seed

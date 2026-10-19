@@ -15,8 +15,8 @@ Licenses were read from the upstream repos on 2026-09-12.
 | image | DreamShaperXL Turbo v2.1 | tile textures, scene-chain terrain | 6.5 GB | CreativeML OpenRAIL++-M |
 | image | BiRefNet | matte (background removal) | ~1 GB | MIT |
 | image | Marqo NSFW detector | safety classifier | 22 MB | Apache 2.0 |
-| mesh | TRELLIS.2-4B | image → 3D | ~10 GB | MIT |
-| mesh | DINOv3 ViT-L/16 | TRELLIS.2 image conditioner | 1.2 GB | DINOv3 License |
+| image | TRELLIS.2-4B (bf16) + shape and texture VAEs | image → 3D | 12.4 GB | MIT |
+| image | DINOv3 ViT-L/16 | TRELLIS.2 image conditioner | 1.2 GB | DINOv3 License |
 
 ## Language
 
@@ -60,7 +60,7 @@ that feed TRELLIS. Won the character and object bake-offs against NetaYume and
 HiDream (`docs/experiments.md`). Runs at a real cfg, so the negative prompt is live.
 
 Requires: the Qwen2.5-VL-7B text encoder and `qwen_image_vae` below; ~20 GB VRAM at fp8 in
-ComfyUI 0.30.1.
+ComfyUI v0.39.2.
 
 ### Qwen-Image-Edit-2511 (fp8)
 
@@ -108,9 +108,8 @@ on) that any downstream distribution must pass on. We distribute outputs, not th
   upstream [ZhengPeng7/BiRefNet](https://huggingface.co/ZhengPeng7/BiRefNet))
 - License: [MIT](https://github.com/ZhengPeng7/BiRefNet/blob/main/LICENSE)
 
-0.2B-parameter dichotomous segmentation model. Cuts the matte on every sprite and subject render.
-The same weights ship a second time under `encoders/BiRefNet` on the mesh volume, where TRELLIS.2
-uses them in place of the non-commercial `briaai/RMBG-2.0` its pipeline config names.
+0.2B-parameter dichotomous segmentation model. Cuts the matte on every sprite and subject render,
+which is also the cut-out TRELLIS.2 lifts.
 
 The `1038lab` repack carries no license field of its own; the license is the upstream MIT.
 
@@ -130,28 +129,30 @@ Requires: CPU is enough.
 
 ### TRELLIS.2-4B
 
-- Weights: [microsoft/TRELLIS.2-4B](https://huggingface.co/microsoft/TRELLIS.2-4B)
+- Weights: [Comfy-Org/TRELLIS.2](https://huggingface.co/Comfy-Org/TRELLIS.2)
+  `diffusion_models/trellis_2_bf16.safetensors`, `vae/trellis_2_shape_vae_bf16.safetensors`,
+  `vae/trellis_2_texture_vae_bf16.safetensors` (ComfyUI repack of
+  [microsoft/TRELLIS.2-4B](https://huggingface.co/microsoft/TRELLIS.2-4B))
 - License: [MIT](https://huggingface.co/microsoft/TRELLIS.2-4B/blob/main/LICENSE)
 
 4B-parameter flow-matching transformer over sparse voxels; one image in, a PBR-textured mesh out.
-Every 3D asset and every world subject comes through it. Served by `engines/trellis/trellis_server.py`
-in gamesummoner-images
-at the 512 pipeline (10 s a mesh on a 5090); a finished GLB is cut to game weight by
-`runtime/decimate.mjs`.
+Every 3D asset and every world subject comes through it. Runs on ComfyUI's native nodes
+(`src/config/workflows/img2mesh.json`) at the 512 tier: remesh, decimate to 50k, unwrap, and a
+1024 base-colour and metallic/roughness bake, 8-9 s a mesh on a 5090 under v0.34.4 (`labs/trellis-comfy`). A
+finished GLB is cut to game weight, webp textures and single-sided, by `runtime/decimate.mjs`.
 
-Requires: 24 GB VRAM minimum; SM120 needs the sdpa patch that `runpod/mesh/Dockerfile` applies
-(the upstream only knows xformers/flash-attn). `--stage-dir ""` and ptype 512 are mandatory on a
-60 GB host or it takes the desktop down.
+Requires: ComfyUI v0.39.2 launched with `--use-pytorch-cross-attention` (DINOv3 has no xformers
+SM120 kernel), and an alpha channel on the input image, whose mask drives the crop.
 
 ### DINOv3 ViT-L/16
 
-- Weights: [camenduru/dinov3-vitl16-pretrain-lvd1689m](https://huggingface.co/camenduru/dinov3-vitl16-pretrain-lvd1689m)
-  (public mirror of the gated
+- Weights: [Comfy-Org/TRELLIS.2](https://huggingface.co/Comfy-Org/TRELLIS.2)
+  `clip_vision/dino_v3_vit_l.safetensors` (ComfyUI repack of the gated
   [facebook/dinov3-vitl16-pretrain-lvd1689m](https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m))
 - License: [DINOv3 License](https://ai.meta.com/resources/models-and-libraries/dinov3-license)
 
 303M-parameter vision transformer; TRELLIS.2's image conditioner, so it is not optional while
-TRELLIS.2 is. 1.2 GB. Staged to tmpfs on the mesh pod at boot.
+TRELLIS.2 is. 1.2 GB.
 
 License terms that touch us: commercial use allowed, royalty-free. Redistribution must carry a
 copy of the agreement; publications must acknowledge DINO. Prohibited: military, nuclear,
