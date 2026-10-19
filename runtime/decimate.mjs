@@ -7,8 +7,9 @@
 //   node decimate.mjs <in.glb> <out.glb> [maxTris=20000]
 import { NodeIO, getBounds } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
-import { weld, simplify, quantize, prune, dedup } from "@gltf-transform/functions";
+import { weld, simplify, quantize, prune, dedup, textureCompress } from "@gltf-transform/functions";
 import { MeshoptSimplifier } from "meshoptimizer";
+import sharp from "sharp";
 
 const [, , inPath, outPath, maxTrisArg] = process.argv;
 const maxTris = Number(maxTrisArg) || 20000;
@@ -71,6 +72,8 @@ if (span > 0 && Math.abs(span - 1) > 1e-3) {
     }
 }
 
-await doc.transform(quantize(), prune());
+for (const material of doc.getRoot().listMaterials()) material.setDoubleSided(false);
+
+await doc.transform(quantize(), textureCompress({ encoder: sharp, targetFormat: "webp" }), prune());
 await io.write(outPath, doc);
 console.log(JSON.stringify({ before, after: countTris(), sloppy, span }));
