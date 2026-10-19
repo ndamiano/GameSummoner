@@ -12,7 +12,7 @@ from scaler.stats import BootingInfo, QueueStats, WorkerInfo
 
 QCFG = {"idle_exit_seconds": 30}
 RP = {"cp_url": "https://cp", "pod_prefix": "gs"}
-LLM = {"model": "pennyroyal", "n_ctx": 65535}
+LLM = {"model": "qwen3.8-flash-next-basalt", "n_ctx": 65535}
 
 
 def _provider(name, prices, machines=()):
@@ -38,16 +38,15 @@ def test_an_llm_machine_boots_with_the_model_window_flags_and_slots_and_no_card_
     """The machine cannot read settings, and the card is the worker's to report"""
     p = _provider("runpod", [1.89])
     a = _scaler(p)
-    _start(a, llm={**LLM, "sglang_args": "--cuda-graph-bs 1", "basalt_args": "--parallel 2",
-                   "slots": 2})
+    _start(a, llm={**LLM, "basalt_args": "--spec 5", "slots": 2})
     assert p.launch.call_args.args[2] == {
         "CP_URL": "https://cp", "WORKER_TOKEN": "wtoken", "WORKER_QUEUE": "llm",
-        "IDLE_EXIT_SECONDS": "30", "LLM_MODEL": "pennyroyal", "LLM_N_CTX": "65535",
-        "SGLANG_ARGS_EXTRA": "--cuda-graph-bs 1", "WORKER_SLOTS": "2"}
+        "IDLE_EXIT_SECONDS": "30", "LLM_MODEL": "qwen3.8-flash-next-basalt", "LLM_N_CTX": "65535",
+        "BASALT_ARGS_EXTRA": "--spec 5", "WORKER_SLOTS": "2"}
     assert p.launch.call_args.args[1].startswith("gs-llm-")
     _start(a)
     env = p.launch.call_args.args[2]
-    assert (env["SGLANG_ARGS_EXTRA"], env["WORKER_SLOTS"]) == ("", "1")
+    assert (env["BASALT_ARGS_EXTRA"], env["WORKER_SLOTS"]) == ("", "1")
 
 
 def test_only_an_llm_machine_hears_about_the_model():
@@ -124,7 +123,7 @@ def test_tick_lists_under_the_prefix_and_launches_from_zero_with_settings_env():
     a._stats.queue_stats.return_value = QueueStats(pending=1)
     a.tick()
     p.machines.assert_called_once_with("gs-")
-    assert p.launch.call_args.args[2]["LLM_MODEL"] == "pennyroyal"
+    assert p.launch.call_args.args[2]["LLM_MODEL"] == "qwen3.8-flash-next-basalt"
 
 
 def test_a_launch_starts_the_cooldown_and_a_refusal_does_not(monkeypatch):

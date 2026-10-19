@@ -8,7 +8,7 @@ Licenses were read from the upstream repos on 2026-09-12.
 
 | Queue | Model | Role | Disk | License |
 |---|---|---|---|---|
-| llm | Qwen3.8 Flash-Next (NVFP4) | design + game build | 126 GiB | Qwen Community 1.0 |
+| llm | Qwen3.8 Flash-Next (UD-Q4_K_XL) | design + game build | 106.8 GiB | Qwen Community 1.0 |
 | decide | JEV-27B-VL on Qwen3.8-27B (NVFP4) | design decisions | 0.9 + 23.4 GB | Apache 2.0 |
 | image | Qwen-Image-2512 (fp8) | sprites, scenes, mesh subjects | 19 GB | Apache 2.0 |
 | image | Qwen-Image-Edit-2511 (fp8) | scene embed | 19 GB | Apache 2.0 |
@@ -21,21 +21,23 @@ Licenses were read from the upstream repos on 2026-09-12.
 
 ## Language
 
-### Qwen3.8 Flash-Next (NVFP4)
+### Qwen3.8 Flash-Next (UD-Q4_K_XL)
 
-- Weights: [RadixArk/Qwen3.8-Flash-Next-NVFP4](https://huggingface.co/RadixArk/Qwen3.8-Flash-Next-NVFP4)
-  (quantized by NVIDIA Model Optimizer from
-  [Qwen/Qwen3.8-Flash-Next](https://huggingface.co/Qwen/Qwen3.8-Flash-Next))
+- Weights: the UD-Q4_K_XL GGUF from
+  [unsloth/Qwen3.8-Flash-Next-GGUF](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF)
+  (quantization of [Qwen/Qwen3.8-Flash-Next](https://huggingface.co/Qwen/Qwen3.8-Flash-Next)),
+  converted to the Basalt pack `Qwen3.8-FN-UD-Q4_K_XL-bf16key-mtptuned.basalt`
 - License: [Qwen Community License 1.0](https://huggingface.co/Qwen/Qwen3.8-Flash-Next/blob/main/LICENSE)
 
 The one model that designs and writes the game. A 125B-parameter mixture-of-experts with 6B active
 per token, hybrid attention, gated residuals and an n-gram embedding; text and vision in, 262K
-native context (1M extended). NVFP4 W4A4 on the routed experts brings the checkpoint from 360 GB
-to ~135 GB and fits one 96 GB card.
+native context (1M extended). The pack is 106.8 GiB: the UD-Q4_K_XL weights with the PLE key in
+BF16 and the tuned MTP draft layer. `labs/basalt-6000/userdata2.sh` is the conversion recipe; it
+needs the converter's `NATIVE_PLE_KEY` edited first.
 
-Served by Pennyroyal, the SGLang fork for the RTX PRO 6000 (SM120), at a 524288 window,
-`reasoning_effort=medium`. The llm volume holds it prepacked, not as safetensors, so a pod boots
-in 20–55 s instead of a 110 s CPU-bound repack (`docs/deploy.md`).
+Served by Basalt on the RTX PRO 6000 (SM120) at a 262144 window, `reasoning_effort=medium`. An EC2
+box pulls the pack from the region's bucket onto instance store at boot; a RunPod pod serves it
+from the llm volume (`aws/README.md` and `runpod/README.md` in gamesummoner-images).
 
 Requires: RTX PRO 6000 (96 GB, SM120), Workstation or Server Edition; the driver floor in
 `queues.llm.allowed_cuda_versions`.
@@ -205,9 +207,8 @@ public code.
 |---|---|---|
 | [ComfyUI](https://github.com/Comfy-Org/ComfyUI) v0.39.2 | the comfy queue: images and TRELLIS.2 | GPL-3.0 |
 | [ComfyUI-RMBG](https://github.com/1038lab/ComfyUI-RMBG) 3.0.0 | the BiRefNet matte inside ComfyUI | GPL-3.0 |
-| [Pennyroyal](https://github.com/ndamiano/sglang-rtxpro6000), an SGLang fork | the llm queue in production | Apache 2.0 |
 | [SGLang](https://github.com/sgl-project/sglang) 0.5.21 | the decide queue | Apache 2.0 |
-| [Basalt](https://github.com/ndamiano/basalt) | the llm queue on a local 5090 | MIT |
+| [Basalt](https://github.com/ndamiano/basalt) `gamesummoner-v1` | the llm queue, in production and on a local 5090 | MIT |
 
 ## License obligations
 

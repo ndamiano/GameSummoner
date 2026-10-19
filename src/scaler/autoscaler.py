@@ -116,14 +116,9 @@ class Autoscaler:
                     "IDLE_EXIT_SECONDS": str(qcfg.get("idle_exit_seconds", 10)),
                 }
                 if queue == "llm":
-                    # The engine answers only requests naming its served model, and the pod
-                    # cannot read settings, so the string every request will carry is delivered
-                    # at create — the entrypoint refuses to boot on a mismatch rather than fail
-                    # every turn. The window the control plane budgets against rides along, as
-                    # do the engine's tuning flags, so a flag is a settings edit and not an image.
                     env["LLM_MODEL"] = llm["model"]
                     env["LLM_N_CTX"] = str(llm["n_ctx"])
-                    env["SGLANG_ARGS_EXTRA"] = llm.get("sglang_args") or ""
+                    env["BASALT_ARGS_EXTRA"] = llm.get("basalt_args") or ""
                     env["WORKER_SLOTS"] = str(llm.get("slots", 1))
                 if self._start_pod(name, queue, env, uuid.uuid4().hex):
                     self._last_scale_up[queue] = now

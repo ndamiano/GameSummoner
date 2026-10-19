@@ -45,7 +45,6 @@ class SettingsManager:
                 # build without thinking makes "something kinda close" (docs/experiments.md).
                 "reasoning": os.getenv("LLM_REASONING", "medium"),
                 "max_tokens": 50000,
-                "sglang_args": os.getenv("SGLANG_ARGS", ""),
                 "basalt_args": os.getenv("BASALT_ARGS", ""),
                 # Jobs one llm worker runs at once; the pod's engine batches them. The scaler
                 # counts workers, not slots, so depth_per_worker and max age scale with it.

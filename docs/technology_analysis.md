@@ -12,7 +12,7 @@ the ones we reject, because "why we didn't switch" is the expensive thing to rel
 
 | Job | Model | Served by | Defined in |
 |---|---|---|---|
-| Build turns (the LLM) | Qwen3.8 Flash-Next: NVFP4 in prod, IQ3_S on a 5090 | Pennyroyal SGLang on an RTX PRO 6000; Basalt on a 5090 | `llm.model` in settings.json |
+| Build turns (the LLM) | Qwen3.8 Flash-Next: UD-Q4_K_XL in prod, IQ3_S on a 5090 | Basalt on an RTX PRO 6000 (prod) and a 5090 (local) | `llm.model` in settings.json |
 | Tiles | DreamShaperXL Turbo v2.1 → min-cut quilting | ComfyUI + `tools/quilting.py` | `workflows/txt2img_tile.json` |
 | Sprites, scenes, mesh subjects, scene-chain subjects | Qwen-Image 2512 | ComfyUI | `workflows/txt2img_subject.json` |
 | Scene-chain terrain | DreamShaperXL Turbo v2.1 (masked img2img) | ComfyUI | graph built in `scenegen/paint.py` |

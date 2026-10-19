@@ -70,8 +70,8 @@ process-parallel, 36 s serial against 9 s here), frontend
 
 [Basalt](https://github.com/jesdga95/basalt), a Strata fork for Blackwell, serves the prod model,
 Qwen3.8 Flash-Next, on the 5090 as the GSQ-RCO IQ3_S pack (`docs/models.md`): routed experts
-stream through a GPU expert cache, the rest stays resident. Locally it is the closest thing to
-prod's Pennyroyal: the same model at a lower-bit quantization.
+stream through a GPU expert cache, the rest stays resident. Prod runs the same engine and model on
+an RTX PRO 6000 at UD-Q4_K_XL; the 5090 runs a lower-bit quantization.
 
 ```
 <basalt>/bin/basalt serve \
@@ -89,9 +89,9 @@ expert-cache slots while it reads an image, so the worldgen refine stages can sh
 renders without a standing vision allocation. The window sits above `n_ctx` (131072), and
 `--fit-max-tokens` trims a request's `max_tokens` rather than refusing it, because Basalt counts a
 build's prompt about 1.5K tokens longer than the harness does and answers 400 to a request that
-overflows (measured 2026-10-15, `labs/basalt-6000`). Prod's Pennyroyal runs 524288 against the
-same budget for the same reason. Thinking is `llm.reasoning` (below), sent as `reasoning_effort`
-on every call.
+overflows (measured 2026-10-15, `labs/basalt-6000`). Prod's llm box runs the same 262144 window
+and `fit-max-tokens` for the same reason. Thinking is `llm.reasoning` (below), sent as
+`reasoning_effort` on every call.
 
 ### LLM — llama.cpp
 
@@ -157,8 +157,8 @@ this box has to add is a URL a pod can reach.
    `sudo tailscale funnel off` when done.
 2. In settings.json: prod's `runpod` block (`queues`, templates, volumes; take it from the
    droplet's settings.json) with `enabled: true` and `cp_url` = the funnel URL; `llm` =
-   what the pod serves — `model` `pennyroyal`, `n_ctx` 131072, `slots` 2 — because the pod
-   refuses to boot on a model mismatch and every request names it. `max_workers: 1` per queue
+   what the pod serves — `model` `qwen3.8-flash-next-basalt`, `n_ctx` 131072, `slots` 1 —
+   because the pod serves under `model` and every request names it. `max_workers: 1` per queue
    bounds spend. `workqueue.job_timeout_seconds` ≥ the longest single call you will queue (a
    100K-token design at xhigh runs past the 1800 s default).
 3. Stop `scripts/local_gpu.py auto` and any hand-started worker: a local worker claims the job
@@ -198,13 +198,16 @@ restarted — Node caches the ESM config, and a stale one drops every custom cla
 
 ### `llm`
 
-`model`, `n_ctx`, `max_tokens`, `reasoning`, `slots`, `sglang_args`, `basalt_args`. There is no
+`model`, `n_ctx`, `max_tokens`, `reasoning`, `slots`, `basalt_args`. There is no
 endpoint — inference rides the queue.
 
 `slots` is how many jobs one llm worker runs at once against its engine (`worker/agent.py
 --slots`); an llm pod reads it at create. The scaler counts workers, not slots, so the llm
 queue's `min_jobs_per_pod` is per pod and scales with it: two slots, twice the backlog before a
-second card is rented.
+second card is rented. Prod's llm runs 1: Basalt reuses a slot only on an exact prefix match, an
+agent's next turn never matches one, so with `--parallel` above 1 it re-reads the whole
+conversation every turn. Builds sharing a card take turns on the one slot; conversation parking
+restores each build's conversation in 0.3–0.5 s when its turn comes.
 
 `n_ctx` is the INPUT budget: when the prompt ABOUT TO BE SENT — the last one the server counted
 plus the rounds added since — leaves less than 16K tokens of it, `build_steps.compact`
@@ -213,9 +216,9 @@ of the oldest rounds until a third of the window holds the rest and, only if tha
 drops the oldest whole rounds; every compaction re-grounds the model on the code map and on which
 files it has already read unchanged (`CLAUDE.md`). Nothing else trims.
 
-The two `_args` strings are appended to an engine's launch line, one per engine: `basalt_args` by
-`scripts/local_gpu.py` for Flash-Next IQ3_S on the local 5090, `sglang_args` by the pod
-entrypoint for Flash-Next NVFP4 on an RTX PRO 6000 (`docs/deploy.md`). Prod and the local box run
+`basalt_args` is appended to Basalt's launch line: by `scripts/local_gpu.py` for Flash-Next IQ3_S
+on the local 5090, and by the llm box entrypoint, as `BASALT_ARGS_EXTRA`, for Flash-Next
+UD-Q4_K_XL on an RTX PRO 6000 (`docs/deploy.md`). Prod and the local box run
 the same model at different quantizations on different cards; the build harness is the same.
 
 Set it to the server's `-c`. The local router never reports its window, so both errors are yours to
@@ -306,7 +309,8 @@ seven days, and the never-pruned requests-vs-stock-refusals ratio over 60 days a
 nothing when zero.
 
 `llm.model` must be what the engine answers to: it reaches the pod as `LLM_MODEL`, and the
-autoscaled llm image serves `pennyroyal` and refuses to boot under any other name.
+autoscaled llm image serves under that alias. `llm.n_ctx` reaches it as `LLM_N_CTX` and must be at
+most 262144, Basalt's window.
 
 ### `aws`
 
