@@ -28,7 +28,7 @@ from auth import store
 from billing.packages import MICROS_PER_CREDIT
 from db import games, jobs
 from maestro.codegen import build_chain, build_state, design
-from maestro.codegen.staging import game_dir, is_staged
+from maestro.codegen.staging import game_dir, is_staged, spec_path
 from maestro.state import RunState
 from tools.build_events import _emit
 
@@ -143,8 +143,9 @@ def _new_run(request: str) -> Optional[str]:
     games.charge_game(run_id, 0, MICROS_PER_CREDIT)
     open_ask(run_id, request)
     print(f"run: {run_id}\nask: {request!r}\ndesigning...")
-    prompt = design.generate(run_id, request)
-    print(f"design: {len(prompt.split())} words" if prompt != request.strip()
+    design.generate(run_id, request)
+    spec = spec_path(RunState(run_id).run_dir)
+    print(f"design: {len(spec.read_text().split())} words" if spec.exists()
           else "design: none — the ask is the prompt")
     return run_id
 
