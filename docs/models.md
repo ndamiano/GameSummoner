@@ -9,6 +9,7 @@ Licenses were read from the upstream repos on 2026-09-12.
 | Queue | Model | Role | Disk | License |
 |---|---|---|---|---|
 | llm | Qwen3.8 Flash-Next (NVFP4) | design + game build | 126 GiB | Qwen Community 1.0 |
+| decide | JEV-27B-VL on Qwen3.8-27B (NVFP4) | design decisions | 0.9 + 23.4 GB | Apache 2.0 |
 | image | Qwen-Image-2512 (fp8) | sprites, scenes, mesh subjects | 19 GB | Apache 2.0 |
 | image | Qwen-Image-Edit-2511 (fp8) | scene embed | 19 GB | Apache 2.0 |
 | image | Qwen2.5-VL-7B text encoder (fp8) | shared by both Qwen graphs | 8.7 GB | Apache 2.0 |
@@ -45,6 +46,25 @@ Service" business — giving third parties inference access with meaningful cont
 parameters — needs a separate license from Qwen. GameSummoner exposes no prompt or parameter
 control over the model; the user types a game idea and gets a game. See [License obligations]
 (#license-obligations).
+
+## Decision
+
+### JEV-27B-VL on Qwen3.8-27B (NVFP4)
+
+- Weights: [autotrust/JEV-27B-VL](https://huggingface.co/autotrust/JEV-27B-VL) at `9e53b8a` (the
+  LoRA, the decision head, the tokenizer and templates) over
+  [unsloth/Qwen3.8-27B-NVFP4](https://huggingface.co/unsloth/Qwen3.8-27B-NVFP4) at `7d6f8d4`
+  (NVFP4 of [Qwen/Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B))
+- License: [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0), adapter and base
+
+A System One decision model: a LoRA and a readout head on Qwen3.8-27B that turn a state, a
+question and its options into calibrated probabilities. The design stage asks it every decision in
+`prompts/design/decisions.json` as one `decide` job. Served by stock SGLang 0.5.21 with the LoRA
+and hidden states returned; the head is applied over them by `contract/decide.py` in
+gamesummoner-images.
+
+Requires: one 5090-class card (`local/decide/`; `aws/decide/` on a g7e.2xlarge).
+`--max-running-requests 1`: two co-batched sequences moved a probability by up to 0.05.
 
 ## Image
 
@@ -176,6 +196,19 @@ top-1 token as Q8_0 on Basalt's wikitext-2 bench. `settings.json` names it by th
 serves it under, on :8090 (`docs/local_dev.md`). Never in production.
 Everything else in this file runs locally through the same code path as prod (`docs/local_dev.md`).
 
+## Engines
+
+The servers the weights above run in. None is shipped: the worker images are private, built from
+public code.
+
+| Engine | Serves | License |
+|---|---|---|
+| [ComfyUI](https://github.com/Comfy-Org/ComfyUI) v0.39.2 | the comfy queue: images and TRELLIS.2 | GPL-3.0 |
+| [ComfyUI-RMBG](https://github.com/1038lab/ComfyUI-RMBG) 3.0.0 | the BiRefNet matte inside ComfyUI | GPL-3.0 |
+| [Pennyroyal](https://github.com/ndamiano/sglang-rtxpro6000), an SGLang fork | the llm queue in production | Apache 2.0 |
+| [SGLang](https://github.com/sgl-project/sglang) 0.5.21 | the decide queue | Apache 2.0 |
+| [Basalt](https://github.com/ndamiano/basalt) | the llm queue on a local 5090 | MIT |
+
 ## License obligations
 
 What the licenses above require of the product as shipped, in one place.
@@ -186,3 +219,4 @@ What the licenses above require of the product as shipped, in one place.
 | "Model as a Service" needs a separate Qwen license | Qwen Community 1.0 | Not a MaaS: users control a game prompt, not model inputs or parameters. Watch if a raw prompt or parameter surface is ever exposed. |
 | Qwen model name on UI above 100M MAU or US$20M monthly revenue | Qwen Community 1.0 | Below threshold. |
 | OpenRAIL++ use restrictions passed to downstream weight recipients | DreamShaperXL | Nothing ships the weights. Nothing owed today. |
+| Source offer and the GPL to anyone given a ComfyUI build | ComfyUI, ComfyUI-RMBG | The ComfyUI image is private and never distributed. Nothing owed today; owed the day an image or an installer bundling ComfyUI ships. |

@@ -31,6 +31,7 @@ Our queues are simple queries on the jobs table in our sql database.
 
 | queue | work | target |
 |---|---|---|
+| `decide` | one chain of design decisions | SGLang with the JEV adapter |
 | `llm` | one build turn | any OpenAI-shaped server |
 | `comfy` | one image render, or image → 3D through TRELLIS.2 | ComfyUI |
 
