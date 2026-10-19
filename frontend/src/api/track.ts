@@ -56,8 +56,16 @@ if (typeof window !== 'undefined') {
 
 // Seen before any token exists, so it cannot ride send().
 export function trackLanding(): void {
+    postReferrer('/api/events/landing')
+}
+
+export function trackShareView(shareId: string): void {
+    postReferrer(`/api/shares/${encodeURIComponent(shareId)}/view`)
+}
+
+function postReferrer(path: string): void {
     try {
-        void fetch('/api/events/landing', {
+        void fetch(path, {
             method: 'POST',
             keepalive: true,
             headers: { 'Content-Type': 'application/json' },

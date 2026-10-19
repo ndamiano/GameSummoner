@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../../api/client'
+import { trackShareView } from '../../api/track'
 import { Link } from '../../router'
 import type { SharedGame as Share } from '../../types'
 import { Button } from '../ui/Button'
@@ -12,6 +13,8 @@ const SharedGame: React.FC<{ shareId: string }> = ({ shareId }) => {
     const [session, setSession] = useState<string | null>(null)
     const [busy, setBusy] = useState(false)
     const stageRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => { trackShareView(shareId) }, [shareId])
 
     useEffect(() => {
         api.getShare(shareId).then(s => { setShare(s); document.title = `${s.title} · GameSummoner` })

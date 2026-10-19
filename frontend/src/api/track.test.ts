@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setAuthToken } from './client'
-import { flush, track, trackLanding } from './track'
+import { flush, track, trackLanding, trackShareView } from './track'
 
 const lastBody = (fetchMock: ReturnType<typeof vi.fn>): unknown[] =>
     JSON.parse(fetchMock.mock.calls.at(-1)![1].body)
@@ -82,13 +82,15 @@ describe('track', () => {
         expect((lastBody(fetchMock) as { kind: string }[]).map(r => r.kind)).toEqual(['change_sent'])
     })
 
-    it('posts the landing view at once, without a token, carrying the referrer', () => {
+    it('posts landing and share views at once, without a token, carrying the referrer', () => {
         setAuthToken(null)
         trackLanding()
-        expect(fetchMock).toHaveBeenCalledTimes(1)
-        const [url, init] = fetchMock.mock.calls[0]
-        expect(url).toBe('/api/events/landing')
-        expect(init.headers.Authorization).toBeUndefined()
-        expect(JSON.parse(init.body)).toEqual({ referrer: document.referrer })
+        trackShareView('abc_123-XY')
+        expect(fetchMock.mock.calls.map(c => c[0]))
+            .toEqual(['/api/events/landing', '/api/shares/abc_123-XY/view'])
+        for (const [, init] of fetchMock.mock.calls) {
+            expect(init.headers.Authorization).toBeUndefined()
+            expect(JSON.parse(init.body)).toEqual({ referrer: document.referrer })
+        }
     })
 })

@@ -13,6 +13,7 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
+from api.routers.events import record_anon
 from auth import playgrants
 from config.settings_manager import settings_manager
 from maestro import demos
@@ -93,5 +94,6 @@ async def demo_play_session(run_id: str):
     token = playgrants.issue_handoff(playgrants.target("demos", run_id))
     if token is None:
         raise HTTPException(status_code=429, detail="too many open sessions — try again shortly")
+    await record_anon("demo_played", {}, run_id)
     origin = (settings_manager.get_settings().get("play") or {}).get("origin", "").rstrip("/")
     return {"url": f"{origin}/handoff?t={token}", "origin": origin}

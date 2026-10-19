@@ -4,7 +4,7 @@ import sqlite3
 import time
 import uuid
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from db.connection import auth_db
 
@@ -153,3 +153,13 @@ def list_purchases(user_id: str) -> List[Purchase]:
         rows = conn.execute("SELECT * FROM purchases WHERE user_id = ? ORDER BY created_at DESC",
                             (user_id,)).fetchall()
     return [_row_to_purchase(r) for r in rows]
+
+
+def purchase_totals(since: float) -> Dict[str, int]:
+    with auth_db() as conn:
+        started = conn.execute("SELECT COUNT(*) FROM purchases WHERE created_at >= ?",
+                               (since,)).fetchone()[0]
+        done = conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(usd_cents), 0) FROM purchases "
+            "WHERE status = 'completed' AND completed_at >= ?", (since,)).fetchone()
+    return {"checkouts": started, "purchases": done[0], "revenue_cents": done[1]}

@@ -9,6 +9,7 @@ import pytest
 
 import api.app
 from auth import playgrants, store
+from db.connection import platform_db
 from maestro import demos
 from maestro.codegen.run import create_run, set_prompt
 from maestro.codegen.staging import stage_for_play
@@ -184,6 +185,9 @@ def test_demo_play_session_works_without_auth_for_listed_games_only(client, stag
     assert client.post(f"/api/demos/{other}/play-session").status_code == 404
     r = client.post(f"/api/demos/{run_id}/play-session")
     assert r.status_code == 200
+    with platform_db() as conn:
+        plays = conn.execute("SELECT user_id, game_id FROM events WHERE kind = 'demo_played'").fetchall()
+    assert [tuple(p) for p in plays] == [("anon", run_id)]
     r2 = client.get(r.json()["url"], follow_redirects=False)
     assert r2.status_code == 302
     assert r2.headers["location"] == f"/play/demos/{run_id}/index.html"

@@ -6,7 +6,7 @@ import asyncio
 import json
 import re
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
 from fastapi import APIRouter, Body, Depends
 
@@ -58,11 +58,18 @@ async def ingest(batch: List[Any] = Body(...), user: User = Depends(get_current_
     return {"accepted": len(rows)}
 
 
-@router.post("/landing", response_model=Dict)
-async def landing(body: Any = Body(default=None)):
+def referrer_host(body: Any) -> str:
     referrer = body.get("referrer") if isinstance(body, dict) else None
     host = urlsplit(referrer).hostname if isinstance(referrer, str) else None
-    payload = {"referrer": (host or "")[:MAX_REFERRER_HOST]}
+    return (host or "")[:MAX_REFERRER_HOST]
+
+
+async def record_anon(kind: str, payload: Dict, game_id: Optional[str] = None) -> None:
     await asyncio.to_thread(events.record_user_events, ANON_USER, [
-        {"kind": "landing_view", "payload": payload, "game_id": None, "created_at": time.time()}])
+        {"kind": kind, "payload": payload, "game_id": game_id, "created_at": time.time()}])
+
+
+@router.post("/landing", response_model=Dict)
+async def landing(body: Any = Body(default=None)):
+    await record_anon("landing_view", {"referrer": referrer_host(body)})
     return {"accepted": 1}

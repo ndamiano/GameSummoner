@@ -148,9 +148,32 @@ export interface AdminCosts {
     games: { n: number; avg_gpu_hours: number | null; avg_usd: number | null; avg_changes: number | null }
 }
 
+export interface UsageCounts {
+    landing: number
+    signups: number
+    active: number
+    demo_plays: number
+    share_views: number
+    share_plays: number
+    own_plays: number
+    builds: number
+}
+
+export interface HotShare {
+    run_id: string
+    share_id: string | null
+    title: string
+    owner: string | null
+    views: number
+    plays: number
+    last_at: number
+    referrers: [string, number][]
+}
+
 export interface AdminAnalytics {
-    kinds: string[]
-    days: { day: string; users: number; kinds: Record<string, number> }[]
+    totals: UsageCounts & { users: number; checkouts: number; purchases: number; revenue_cents: number }
+    days: (UsageCounts & { day: string })[]
+    shares: HotShare[]
 }
 
 export interface AdminQueues {

@@ -11,9 +11,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from auth import store
 from auth.deps import require_admin
 from auth.store import User
+from billing import ledger
 from billing.estimates import QUEUE_SECONDS_ESTIMATES
 from config.settings_manager import settings_manager
 from db import events, games, jobs, workers
+from maestro import shares
 from maestro.codegen import build_chain
 from scaler.runpod_client import RunPodClient
 
@@ -108,19 +110,64 @@ async def get_queues(_: User = Depends(require_admin)) -> Dict[str, Any]:
     return {"queues": queues, "totals": totals}
 
 
+_USAGE_COLUMNS = {
+    "landing": "landing_view", "demo_plays": "demo_played", "share_views": "share_viewed",
+    "share_plays": "share_played", "own_plays": "game_played", "builds": "build_started",
+}
+_HOT_LIST = 20
+
+
+def _hot_shares(rows: List[Dict]) -> List[Dict]:
+    by_game: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        g = by_game.setdefault(r["game_id"], {"views": 0, "plays": 0, "last_at": 0.0, "referrers": {}})
+        g["last_at"] = max(g["last_at"], r["last_at"])
+        if r["kind"] == "share_played":
+            g["plays"] += r["n"]
+            continue
+        g["views"] += r["n"]
+        host = r["host"] or "direct"
+        g["referrers"][host] = g["referrers"].get(host, 0) + r["n"]
+    handles = {u.id: u.handle for u in store.list_users()}
+    hot = sorted(by_game.items(), key=lambda kv: (kv[1]["views"], kv[1]["plays"]), reverse=True)
+    out = []
+    for run_id, g in hot[:_HOT_LIST]:
+        row = games.game(run_id) or {}
+        out.append({"run_id": run_id, "share_id": shares.share_id_of(run_id),
+                    "title": row.get("title") or run_id, "owner": handles.get(row.get("user_id")),
+                    **g, "referrers": sorted(g["referrers"].items(), key=lambda kv: -kv[1])})
+    return out
+
+
 @router.get("/analytics")
 async def get_analytics(days: int = 14, _: User = Depends(require_admin)) -> Dict[str, Any]:
-    """Returns the usage funnel: per day, event counts by kind plus distinct active users."""
     days = max(1, min(days, 90))
-    rollup = events.user_event_rollup(time.time() - days * _DAY_SECONDS)
-    by_day: Dict[str, Dict[str, int]] = {}
+    now = time.time()
+    since = now - days * _DAY_SECONDS
+    rollup = events.user_event_rollup(since)
+    every_signup = store.signup_times()
+    signups = [t for t in every_signup if t >= since]
+    day_names = [time.strftime("%Y-%m-%d", time.gmtime(now - i * _DAY_SECONDS)) for i in range(days)]
+    by_day: Dict[str, Dict[str, int]] = {d: {"signups": 0, "active": 0, **dict.fromkeys(_USAGE_COLUMNS, 0)}
+                                         for d in day_names}
+    kind_to_col = {k: col for col, k in _USAGE_COLUMNS.items()}
     for r in rollup["kinds"]:
-        by_day.setdefault(r["day"], {})[r["kind"]] = r["n"]
-    users = {r["day"]: r["n"] for r in rollup["users"]}
+        if r["day"] in by_day and r["kind"] in kind_to_col:
+            by_day[r["day"]][kind_to_col[r["kind"]]] += r["n"]
+    for r in rollup["users"]:
+        if r["day"] in by_day:
+            by_day[r["day"]]["active"] = r["n"]
+    for t in signups:
+        day = time.strftime("%Y-%m-%d", time.gmtime(t))
+        if day in by_day:
+            by_day[day]["signups"] += 1
+    totals = {col: sum(d[col] for d in by_day.values()) for col in _USAGE_COLUMNS}
+    totals.update(users=len(every_signup), signups=len(signups), active=rollup["active"],
+                  **ledger.purchase_totals(since))
     return {
-        "kinds": sorted({r["kind"] for r in rollup["kinds"]}),
-        "days": [{"day": d, "users": users.get(d, 0), "kinds": by_day[d]}
-                 for d in sorted(by_day, reverse=True)],
+        "totals": totals,
+        "days": [{"day": d, **by_day[d]} for d in day_names],
+        "shares": await asyncio.to_thread(_hot_shares, rollup["shares"]),
     }
 
 

@@ -168,3 +168,33 @@ def test_a_shared_link_unfurls_as_that_game(client, cleanup, no_thumbs):
     assert f'og:url" content="https://gamesummoner.com/g/{sid}"' in card
     assert f'og:image" content="https://gamesummoner.com/api/shares/{sid}/thumb"' in card
     assert 'og:description" content="Describe a game."' in card
+
+
+def test_share_views_and_plays_rank_the_hot_list_with_their_referrers(client, cleanup, no_thumbs):
+    owner, auth = _owner("carol")
+    hot = _built_game(owner, cleanup)
+    cold = _built_game(owner, cleanup)
+    hot_sid = client.post(f"/api/games/{hot}/share", headers=auth).json()["share_id"]
+    cold_sid = client.post(f"/api/games/{cold}/share", headers=auth).json()["share_id"]
+
+    for ref in ("https://www.reddit.com/r/gamedev/x?y=1", "https://www.reddit.com/", None):
+        assert client.post(f"/api/shares/{hot_sid}/view", json={"referrer": ref}).status_code == 200
+    _play(client, hot_sid)
+    client.post(f"/api/shares/{cold_sid}/view", json={"referrer": "https://www.linkedin.com/feed"})
+    client.get(f"/g/{cold_sid}")
+    assert client.post("/api/shares/nosuchshare1/view", json={}).status_code == 404
+
+    admin = store.create_user("root", "pw-pass1234", role="admin", email="root@example.com")
+    body = client.get("/api/admin/analytics",
+                      headers={"Authorization": f"Bearer {store.issue_token(admin.id)}"}).json()
+    assert [(s["run_id"], s["share_id"], s["owner"], s["views"], s["plays"], s["referrers"])
+            for s in body["shares"]] == [
+        (hot, hot_sid, "carol", 3, 1, [["www.reddit.com", 2], ["direct", 1]]),
+        (cold, cold_sid, "carol", 1, 0, [["www.linkedin.com", 1]]),
+    ]
+    assert (body["totals"]["share_views"], body["totals"]["share_plays"]) == (4, 1)
+
+    client.delete(f"/api/games/{hot}/share", headers=auth)
+    body = client.get("/api/admin/analytics",
+                      headers={"Authorization": f"Bearer {store.issue_token(admin.id)}"}).json()
+    assert body["shares"][0]["run_id"] == hot and body["shares"][0]["share_id"] is None

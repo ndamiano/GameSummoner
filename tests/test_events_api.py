@@ -6,6 +6,7 @@ import sqlite3
 import time
 
 from auth import store
+from billing import ledger
 from db import events
 
 
@@ -90,25 +91,42 @@ def test_user_rows_never_leak_into_the_game_event_log():
     assert [e["kind"] for e in events.events_for("g1")] == ["build_step"]
 
 
-def test_rollup_buckets_by_day_and_counts_distinct_users(app_client):
+def test_rollup_fills_fixed_columns_per_day_and_counts_users_and_purchases(app_client):
     now = time.time()
     events.record_user_events("u1", [
         {"kind": "page_view", "payload": {}, "created_at": now},
-        {"kind": "page_view", "payload": {}, "created_at": now},
         {"kind": "build_started", "payload": {}, "created_at": now},
+        {"kind": "game_played", "payload": {}, "created_at": now - 86400},
     ])
-    events.record_user_events("u2", [
-        {"kind": "page_view", "payload": {}, "created_at": now},
+    events.record_user_events("u2", [{"kind": "page_view", "payload": {}, "created_at": now}])
+    events.record_user_events("anon", [
+        {"kind": "demo_played", "payload": {}, "game_id": "d1", "created_at": now},
+        {"kind": "demo_played", "payload": {}, "game_id": "d1", "created_at": now - 86400},
+        {"kind": "landing_view", "payload": {}, "created_at": now - 40 * 86400},
     ])
     events.record_event("g1", "build_step", {"step": 1})
 
     token = _token("root", "admin")
-    body = app_client.get("/api/admin/analytics",
+    buyer = store.get_user_by_handle("root").id
+    paid, refunded, _abandoned = (ledger.create_purchase(buyer, "p", 10, cents)
+                                  for cents in (500, 900, 2000))
+    ledger.complete_purchase(paid.id)
+    ledger.complete_purchase(refunded.id)
+    ledger.refund_purchase(refunded.id)
+    body = app_client.get("/api/admin/analytics?days=3",
                           headers={"Authorization": f"Bearer {token}"}).json()
-    assert body["kinds"] == ["build_started", "page_view"]
     today = time.strftime("%Y-%m-%d", time.gmtime(now))
-    assert body["days"] == [
-        {"day": today, "users": 2, "kinds": {"page_view": 3, "build_started": 1}}]
+    zero = {"landing": 0, "demo_plays": 0, "share_views": 0, "share_plays": 0,
+            "own_plays": 0, "builds": 0}
+    assert [d["day"] for d in body["days"]][0] == today and len(body["days"]) == 3
+    assert body["days"][0] == {"day": today, **zero, "signups": 1, "active": 2,
+                               "demo_plays": 1, "builds": 1}
+    assert body["days"][1]["own_plays"] == 1 and body["days"][1]["active"] == 1
+    assert body["days"][2] == {**body["days"][2], **zero, "signups": 0, "active": 0}
+    assert body["totals"] == {**zero, "users": 1, "signups": 1, "active": 2,
+                              "demo_plays": 2, "own_plays": 1, "builds": 1,
+                              "checkouts": 3, "purchases": 1, "revenue_cents": 500}
+    assert body["shares"] == []
 
 
 def test_rollup_is_admin_only(app_client):
@@ -128,7 +146,7 @@ def test_landing_view_needs_no_token_and_keeps_only_the_referrer_host(app_client
     assert rows[0]["payload"] == '{"referrer": "news.ycombinator.com"}'
 
 
-def test_landing_view_counts_as_a_kind_but_not_a_user(app_client, isolated_dbs):
+def test_landing_view_counts_but_not_as_a_user(app_client, isolated_dbs):
     token = _token(role="admin")
     app_client.post("/api/events/landing", json={"referrer": ""})
     app_client.post("/api/events/landing", json=None)
@@ -136,5 +154,4 @@ def test_landing_view_counts_as_a_kind_but_not_a_user(app_client, isolated_dbs):
     r = app_client.get("/api/admin/analytics", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 200
     day = r.json()["days"][0]
-    assert day["kinds"] == {"landing_view": 2, "page_view": 1}
-    assert day["users"] == 1
+    assert (day["landing"], day["active"]) == (2, 1)

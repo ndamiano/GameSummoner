@@ -44,8 +44,7 @@ def record_user_events(user_id: str, rows: List[Dict]) -> None:
         )
 
 
-def user_event_rollup(since: float) -> Dict[str, List[Dict]]:
-    """Day-bucketed user-action counts: events per (day, kind), distinct users per day."""
+def user_event_rollup(since: float) -> Dict:
     with platform_db() as conn:
         kinds = conn.execute(
             "SELECT date(created_at, 'unixepoch') AS day, kind, COUNT(*) AS n "
@@ -57,7 +56,18 @@ def user_event_rollup(since: float) -> Dict[str, List[Dict]]:
             "FROM events WHERE user_id IS NOT NULL AND user_id != 'anon' AND created_at >= ? "
             "GROUP BY day ORDER BY day",
             (since,)).fetchall()
-    return {"kinds": [dict(r) for r in kinds], "users": [dict(r) for r in users]}
+        active = conn.execute(
+            "SELECT COUNT(DISTINCT user_id) FROM events "
+            "WHERE user_id IS NOT NULL AND user_id != 'anon' AND created_at >= ?",
+            (since,)).fetchone()[0]
+        shares = conn.execute(
+            "SELECT game_id, kind, json_extract(payload, '$.referrer') AS host, COUNT(*) AS n, "
+            "MAX(created_at) AS last_at FROM events "
+            "WHERE kind IN ('share_viewed', 'share_played') AND game_id IS NOT NULL "
+            "AND created_at >= ? GROUP BY game_id, kind, host",
+            (since,)).fetchall()
+    return {"kinds": [dict(r) for r in kinds], "users": [dict(r) for r in users],
+            "active": active, "shares": [dict(r) for r in shares]}
 
 
 def record_violation(user_id: Optional[str], game_id: Optional[str], source: str,

@@ -166,6 +166,11 @@ def list_users() -> List[User]:
     return [_row_to_user(r) for r in rows]
 
 
+def signup_times() -> List[float]:
+    with auth_db() as conn:
+        return [r[0] for r in conn.execute("SELECT created_at FROM users").fetchall()]
+
+
 def authenticate(handle: str, password: str) -> Optional[User]:
     with auth_db() as conn:
         row = conn.execute("SELECT * FROM users WHERE handle = ?", (handle,)).fetchone()
