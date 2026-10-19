@@ -198,3 +198,13 @@ def test_share_views_and_plays_rank_the_hot_list_with_their_referrers(client, cl
     body = client.get("/api/admin/analytics",
                       headers={"Authorization": f"Bearer {store.issue_token(admin.id)}"}).json()
     assert body["shares"][0]["run_id"] == hot and body["shares"][0]["share_id"] is None
+
+
+def test_a_title_with_entities_reads_decoded_on_the_share_and_the_game(client, cleanup, no_thumbs):
+    owner, auth = _owner("dana")
+    run_id = _built_game(owner, cleanup,
+                         body="<head><title>Claws &amp; Cantrips: &quot;Red&quot; &lt;Dot&gt;</title></head>")
+    sid = client.post(f"/api/games/{run_id}/share", headers=auth).json()["share_id"]
+    want = 'Claws & Cantrips: "Red" <Dot>'
+    assert client.get(f"/api/shares/{sid}").json()["title"] == want
+    assert client.get(f"/api/games/{run_id}", headers=auth).json()["title"] == want

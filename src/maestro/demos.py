@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 from typing import Dict, Optional
 
-from maestro.codegen.staging import _TITLE, ENTRY, RUNTIME_DIR
+from maestro.codegen.staging import ENTRY, RUNTIME_DIR, title_of
 
 DEMOS_DIR = RUNTIME_DIR / "demos"
 META = "_demo.json"
@@ -40,14 +40,7 @@ def meta(run_id: str) -> Dict:
 
 def title(run_id: str) -> Optional[str]:
     """The name the model gave the game — the snapshot's <title> — else the run's own title."""
-    entry = demo_dir(run_id) / ENTRY
-    if entry.is_file():
-        match = _TITLE.search(entry.read_text(encoding="utf-8", errors="replace")[:4096])
-        if match:
-            named = " ".join(match.group(1).split())[:80]
-            if named:
-                return named
-    return meta(run_id).get("title") or None
+    return title_of(demo_dir(run_id)) or meta(run_id).get("title") or None
 
 
 def snapshot(run_id: str, replace: bool = False) -> Path:

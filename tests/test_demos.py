@@ -229,6 +229,6 @@ def test_a_built_game_is_named_by_its_own_title_tag(client, staged_game, demo_li
     run_id = _game(staged_game)
     gd = demos.demo_dir(run_id)
     (gd / "index.html").write_text(
-        "<head><title>  The Cursed \n Curio  </title></head><body>x</body>", encoding="utf-8")
+        "<head><title>  Claws &amp; \n Cantrips  </title></head><body>x</body>", encoding="utf-8")
     demo_listed["showcase"].append({"id": run_id})
-    assert client.get("/api/demos").json()[0]["title"] == "The Cursed Curio"
+    assert client.get("/api/demos").json()[0]["title"] == "Claws & Cantrips"

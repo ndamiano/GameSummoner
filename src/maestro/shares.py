@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 from typing import Dict, Optional
 
-from maestro.codegen.staging import _TITLE, ENTRY, RUNTIME_DIR
+from maestro.codegen.staging import ENTRY, RUNTIME_DIR, title_of
 from maestro.state import RunState
 
 logger = logging.getLogger(__name__)
@@ -49,11 +49,6 @@ def share_id_of(run_id: str) -> Optional[str]:
     return sid if exists(sid) else None
 
 
-def _title_of(game: Path) -> str:
-    match = _TITLE.search((game / ENTRY).read_text(encoding="utf-8", errors="replace")[:4096])
-    return " ".join(match.group(1).split())[:80] if match else ""
-
-
 def share(run_id: str) -> str:
     src = RUNTIME_DIR / "games" / run_id
     if not (src / ENTRY).is_file():
@@ -63,7 +58,7 @@ def share(run_id: str) -> str:
     dst = share_dir(sid)
     tmp = SHARES_DIR / f".{sid}.{secrets.token_hex(4)}"
     shutil.copytree(src, tmp)
-    (tmp / META).write_text(json.dumps({"run_id": run_id, "title": _title_of(tmp)}, indent=1),
+    (tmp / META).write_text(json.dumps({"run_id": run_id, "title": title_of(tmp) or ""}, indent=1),
                             encoding="utf-8")
     _capture_thumb(tmp)
     if dst.exists():

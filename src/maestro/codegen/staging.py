@@ -2,6 +2,7 @@
 and how it reaches the browser: copied to `runtime/games/<slug>/` minus design/ and docs/, which
 are ours, not the game's."""
 
+import html
 import os
 import re
 import shutil
@@ -80,14 +81,17 @@ _TITLE = re.compile(r"<title[^>]*>\s*(.*?)\s*</title>", re.IGNORECASE | re.DOTAL
 def staged_title(slug: str) -> Optional[str]:
     """The name the MODEL gave the game — its staged index.html's <title> — or None when there
     is no staging, no tag, or an empty one."""
-    entry = RUNTIME_DIR / "games" / slug / ENTRY
+    return title_of(RUNTIME_DIR / "games" / slug)
+
+
+def title_of(game: Path) -> Optional[str]:
+    entry = game / ENTRY
     if not entry.is_file():
         return None
     match = _TITLE.search(entry.read_text(encoding="utf-8", errors="replace")[:4096])
     if not match:
         return None
-    title = " ".join(match.group(1).split())
-    return title[:80] or None
+    return " ".join(html.unescape(match.group(1)).split())[:80] or None
 
 
 def stage_for_play(run_dir, slug: str) -> str:
