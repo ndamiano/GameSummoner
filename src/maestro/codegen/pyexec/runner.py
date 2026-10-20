@@ -13,6 +13,7 @@ traceback from inside a library it did not know it was calling.
 from __future__ import annotations
 
 import ast
+import json
 import logging
 import os
 import socket
@@ -179,7 +180,9 @@ def _serve(tools: Dict, name: str, kwargs: Dict):
         return f"ERROR: there is no tool called {name!r}.", False, target
     res = fn(**kwargs)
     if isinstance(res, dict) and res.get("ok") is False:
-        return "ERROR: " + str(res.get("error")), False, target
+        extra = {k: v for k, v in res.items() if k not in ("ok", "error") and v}
+        tail = " " + json.dumps(extra, ensure_ascii=False) if extra else ""
+        return "ERROR: " + str(res.get("error")) + tail, False, target
     if not isinstance(res, dict):
         return res, True, target
     # A tool that answers with ONE thing hands the program that thing, so a call reads the way

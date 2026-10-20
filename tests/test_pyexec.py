@@ -44,6 +44,17 @@ write_file(path="after.js", content="// still ran")
     assert out.ledger == [("edit_file", "nope.js", False), ("write_file", "after.js", True)]
 
 
+def test_a_failed_play_carries_the_page_errors_that_explain_it(tmp_path, tools):
+    out = runner.run('''
+write_file("index.html", '<script type="module" src="./main.js"></script>')
+write_file("main.js", 'import { actBoss } from "./enemies.js";\\nwindow.__game = {};\\n')
+write_file("enemies.js", "export const other = 1;\\n")
+print(play("return 1", seconds=1))
+''', tools, timeout=60)
+    assert out.stdout.startswith("ERROR: window.__game never appeared")
+    assert "does not provide an export named 'actBoss'" in out.stdout
+
+
 def test_the_path_jail_still_holds_inside_a_program(tmp_path, tools):
     out = runner.run('print(write_file(path="../../escape.js", content="x"))', tools)
     assert "escapes the project directory" in out.stdout
