@@ -135,6 +135,28 @@ def test_a_claimed_turn_is_left_to_its_worker():
     assert jobs.get_job(turn)["status"] == "claimed"
 
 
+def test_stuck_builds_counts_every_job_on_the_game_not_only_build_turns():
+    games.create_game("g1", "u1")
+    games.charge_game("g1", 10, 144_000)
+    games.set_status("g1", "building")
+    bid = games.create_build("g1", kind="build")
+    turn = jobs.enqueue_job("llm", {}, game_id="g1", build_id=bid,
+                            metadata={"stage": "build", "run_id": "g1", "build_id": bid})
+    gate = jobs.enqueue_job("llm", {}, game_id="g1", build_id=bid)
+
+    def finish(job_id, seconds_ago):
+        with connection.platform_db() as conn:
+            conn.execute("UPDATE jobs SET status = 'done', finished_at = strftime('%s','now') - ? "
+                         "WHERE id = ?", (seconds_ago, job_id))
+
+    finish(turn, 600)
+    assert games.stuck_builds(60) == []
+    finish(gate, 10)
+    assert games.stuck_builds(60) == []
+    finish(gate, 120)
+    assert games.stuck_builds(60) == ["g1"]
+
+
 def test_queue_has_work_sees_pending_and_lapsed_leases():
     jobs.enqueue_job("llm", {"k": 1})
     assert jobs.queue_has_work("llm") is True

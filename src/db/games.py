@@ -134,16 +134,14 @@ def builds_for(game_id: str) -> List[Dict]:
 
 
 def stuck_builds(grace_seconds: float) -> List[str]:
-    """Games marked 'building' with no build turn in flight, for the reaper to re-advance."""
+    """Games marked 'building' with no job of any kind in flight, for the reaper to re-advance."""
     cutoff = time.time() - grace_seconds
     with platform_db() as conn:
         rows = conn.execute(
             "SELECT g.id FROM games g WHERE g.status = 'building' "
             "AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.game_id = g.id "
-            "  AND j.status IN ('pending', 'claimed') "
-            "  AND json_extract(j.metadata, '$.stage') = 'build') "
-            "AND (SELECT MAX(j2.finished_at) FROM jobs j2 WHERE j2.game_id = g.id "
-            "     AND json_extract(j2.metadata, '$.stage') = 'build') < ?",
+            "  AND j.status IN ('pending', 'claimed')) "
+            "AND (SELECT MAX(j2.finished_at) FROM jobs j2 WHERE j2.game_id = g.id) < ?",
             (cutoff,)).fetchall()
     return [r["id"] for r in rows]
 
