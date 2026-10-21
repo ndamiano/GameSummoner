@@ -27,9 +27,9 @@ don't exist, etc.) will give you a failure log, but the program will continue go
 exceptions will halt and you will get a traceback.
 
 Each program starts fresh. If you need something for later, add it to a file. The standard libraries
-are importable (json, re, math, random, itertools, collections and the like). There is no
-filesystem, no network and no way to start another program: the project is reached only through the
-functions above.
+are importable (json, re, math, random, itertools, collections and the like). The program runs in
+the project directory with its real files: open(), os, pathlib, glob and shutil work on the project
+and on nothing outside it. There is no network and no way to start another program.
 
 For context compaction, we will drop most of the history, and you will need to re-read. Given that,
 combined with the fact that you only get what you print into context, try to only print exactly what

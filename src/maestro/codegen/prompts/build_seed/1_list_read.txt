@@ -1,0 +1,2 @@
+print(list_files())
+print(read_file("design/design.md", lines=100))

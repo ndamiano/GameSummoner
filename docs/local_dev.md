@@ -258,6 +258,13 @@ neither metered nor gated. Build and asset enqueues pass it directly; the one bl
 (`workqueue/client.py`’s `run_job`, what the connector's `generate_with_tools` rides) reads it off the
 `run_scope` contextvar instead — a call there outside a scope spends GPU nobody is charged for.
 
+### `working_directory`
+
+Where every run dir lives (`runs/<id>/game` is what a build's programs may touch). Keep it off
+eCryptfs: Landlock refuses directory listings there, so a build's `os.listdir`, `os.walk` and `glob`
+fail with EACCES while `open` still works. On an encrypted home, point it at a plain ext4 path such
+as `/var/lib/gamesummoner/output`.
+
 ### `data_dir`
 
 Env `MAESTRO_DATA_DIR`, default `<repo>/data`. Where platform.db + auth.db live — control-plane

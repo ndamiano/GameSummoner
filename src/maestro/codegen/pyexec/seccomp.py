@@ -1,15 +1,5 @@
-"""A seccomp-bpf filter a process installs on ITSELF, with no privileges and no dependency.
-
-The build's control plane runs as a non-root user in a container with no CAP_SYS_ADMIN, so a
-namespace sandbox (bwrap, nsjail) would need unprivileged user namespaces the host may not grant.
-`prctl(PR_SET_NO_NEW_PRIVS)` followed by `prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER)` needs
-neither, and is refused by nothing: a thread may always narrow what it is allowed to do.
-
-The filter is a DENY LIST, which is only sufficient because the program it confines needs nothing
-from the kernel: every file it reads, every path it writes and every render it asks for goes to the
-parent over an already-open socket, so the denied calls are the whole of what it could otherwise
-reach. Imports happen BEFORE the filter is installed, because `openat` is gone afterwards.
-"""
+"""A seccomp-bpf deny list a process installs on ITSELF, needing no privileges: no new processes,
+network, mounts, links, mode or owner changes, or signals to others. Paths are left to Landlock."""
 
 from __future__ import annotations
 
@@ -33,44 +23,38 @@ BPF_RET_K = 0x06
 # offsetof(struct seccomp_data, nr) and .arch
 _NR, _ARCH = 0, 4
 
-# x86_64 numbers. The syscalls a confined program has no business making: anything that opens a
-# path, starts a process, or reaches the network. Everything Python itself needs to keep running —
-# read, write, mmap, brk, futex, clock_gettime — is deliberately absent and therefore allowed.
+# arch/x86/entry/syscalls/syscall_64.tbl
 DENIED_X86_64 = {
-    2: "open", 257: "openat", 437: "openat2", 56: "clone", 435: "clone3", 57: "fork",
-    58: "vfork", 59: "execve", 322: "execveat", 41: "socket", 42: "connect", 49: "bind",
-    50: "listen", 43: "accept", 288: "accept4", 101: "ptrace", 165: "mount", 166: "umount2",
-    161: "chroot", 155: "pivot_root", 133: "mknod", 259: "mknodat", 87: "unlink",
-    263: "unlinkat", 82: "rename", 264: "renameat", 316: "renameat2", 83: "mkdir",
-    258: "mkdirat", 84: "rmdir", 86: "link", 265: "linkat", 88: "symlink", 266: "symlinkat",
-    90: "chmod", 268: "fchmodat", 92: "chown", 260: "fchownat", 105: "setuid", 106: "setgid",
-    308: "setns", 272: "unshare", 313: "finit_module", 175: "init_module",
-    319: "memfd_create", 447: "memfd_secret", 85: "creat", 76: "truncate",
-    425: "io_uring_setup", 426: "io_uring_enter", 427: "io_uring_register",
-    303: "name_to_handle_at", 304: "open_by_handle_at", 134: "uselib",
-    188: "setxattr", 189: "lsetxattr", 190: "fsetxattr", 197: "removexattr",
-    198: "lremovexattr", 199: "fremovexattr", 132: "utime", 235: "utimes", 261: "futimesat",
-    280: "utimensat", 310: "process_vm_readv", 311: "process_vm_writev", 321: "bpf",
-    323: "userfaultfd", 248: "add_key", 249: "request_key", 250: "keyctl", 62: "kill",
-    200: "tkill", 234: "tgkill", 424: "pidfd_send_signal", 434: "pidfd_open",
-    438: "pidfd_getfd", 300: "fanotify_init", 428: "open_tree", 429: "move_mount",
-    430: "fsopen", 431: "fsconfig", 432: "fsmount", 433: "fspick", 442: "mount_setattr",
+    56: "clone", 435: "clone3", 57: "fork", 58: "vfork", 59: "execve", 322: "execveat",
+    41: "socket", 42: "connect", 49: "bind", 50: "listen", 43: "accept", 288: "accept4",
+    101: "ptrace", 165: "mount", 166: "umount2", 161: "chroot", 155: "pivot_root", 133: "mknod",
+    259: "mknodat", 86: "link", 265: "linkat", 88: "symlink", 266: "symlinkat", 90: "chmod",
+    268: "fchmodat", 92: "chown", 260: "fchownat", 105: "setuid", 106: "setgid", 308: "setns",
+    272: "unshare", 313: "finit_module", 175: "init_module", 319: "memfd_create",
+    447: "memfd_secret", 425: "io_uring_setup", 426: "io_uring_enter", 427: "io_uring_register",
+    303: "name_to_handle_at", 304: "open_by_handle_at", 134: "uselib", 188: "setxattr",
+    189: "lsetxattr", 190: "fsetxattr", 197: "removexattr", 198: "lremovexattr",
+    199: "fremovexattr", 132: "utime", 235: "utimes", 261: "futimesat", 280: "utimensat",
+    310: "process_vm_readv", 311: "process_vm_writev", 321: "bpf", 323: "userfaultfd",
+    248: "add_key", 249: "request_key", 250: "keyctl", 62: "kill", 200: "tkill", 234: "tgkill",
+    424: "pidfd_send_signal", 434: "pidfd_open", 438: "pidfd_getfd", 300: "fanotify_init",
+    428: "open_tree", 429: "move_mount", 430: "fsopen", 431: "fsconfig", 432: "fsmount",
+    433: "fspick", 442: "mount_setattr",
 }
 DENIED_AARCH64 = {
-    56: "openat", 437: "openat2", 220: "clone", 435: "clone3", 221: "execve", 281: "execveat",
-    198: "socket", 203: "connect", 200: "bind", 201: "listen", 202: "accept", 242: "accept4",
-    117: "ptrace", 40: "mount", 39: "umount2", 51: "chroot", 41: "pivot_root", 35: "unlinkat",
-    38: "renameat", 276: "renameat2", 34: "mkdirat", 37: "linkat", 36: "symlinkat",
-    53: "fchmodat", 54: "fchownat", 146: "setuid", 144: "setgid", 268: "setns", 97: "unshare",
-    273: "finit_module", 105: "init_module", 279: "memfd_create", 447: "memfd_secret",
-    33: "mknodat", 45: "truncate", 425: "io_uring_setup", 426: "io_uring_enter",
-    427: "io_uring_register", 264: "name_to_handle_at", 265: "open_by_handle_at",
-    5: "setxattr", 6: "lsetxattr", 7: "fsetxattr", 14: "removexattr", 15: "lremovexattr",
-    16: "fremovexattr", 88: "utimensat", 270: "process_vm_readv", 271: "process_vm_writev",
-    280: "bpf", 282: "userfaultfd", 217: "add_key", 218: "request_key", 219: "keyctl",
-    129: "kill", 130: "tkill", 131: "tgkill", 424: "pidfd_send_signal", 434: "pidfd_open",
-    438: "pidfd_getfd", 262: "fanotify_init", 428: "open_tree", 429: "move_mount",
-    430: "fsopen", 431: "fsconfig", 432: "fsmount", 433: "fspick", 442: "mount_setattr",
+    220: "clone", 435: "clone3", 221: "execve", 281: "execveat", 198: "socket", 203: "connect",
+    200: "bind", 201: "listen", 202: "accept", 242: "accept4", 117: "ptrace", 40: "mount",
+    39: "umount2", 51: "chroot", 41: "pivot_root", 37: "linkat", 36: "symlinkat", 53: "fchmodat",
+    54: "fchownat", 146: "setuid", 144: "setgid", 268: "setns", 97: "unshare", 273: "finit_module",
+    105: "init_module", 279: "memfd_create", 447: "memfd_secret", 33: "mknodat",
+    425: "io_uring_setup", 426: "io_uring_enter", 427: "io_uring_register",
+    264: "name_to_handle_at", 265: "open_by_handle_at", 5: "setxattr", 6: "lsetxattr",
+    7: "fsetxattr", 14: "removexattr", 15: "lremovexattr", 16: "fremovexattr", 88: "utimensat",
+    270: "process_vm_readv", 271: "process_vm_writev", 280: "bpf", 282: "userfaultfd",
+    217: "add_key", 218: "request_key", 219: "keyctl", 129: "kill", 130: "tkill", 131: "tgkill",
+    424: "pidfd_send_signal", 434: "pidfd_open", 438: "pidfd_getfd", 262: "fanotify_init",
+    428: "open_tree", 429: "move_mount", 430: "fsopen", 431: "fsconfig", 432: "fsmount",
+    433: "fspick", 442: "mount_setattr",
 }
 
 

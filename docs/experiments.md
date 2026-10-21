@@ -2595,3 +2595,74 @@ build. Next, as labs: an Opus spec built by DeepSeek (`labs/opus-design-deepseek
 writing their own audio (`labs/model-owned-audio`). The re-read cycle stays the open cost lever.
 
 **Details.** `labs/frontier-ceiling/README.md`; shared Opus game https://gamesummoner.com/g/r12ctNpfCeWH.
+
+## 2026-10-20 — seeded opening rounds (local 5090, Flash-Next IQ3_S via Basalt, branched from fix starts)
+
+A build turn that does nothing: a direct tool call outside the `python` program, a refused import,
+a program the sandbox refuses. Measured as lost turns over 5-turn branches from four fix starts,
+200 branches per arm, temperature as the build. The arms open the build on harness-written rounds
+that the real turn machine runs and answers, pinned right after the request through compaction.
+
+| Arm | Lost turns per branch | Branches with a loss |
+|---|---:|---:|
+| control | 0.84 | 125 |
+| 3 rounds (read_file direct, `open`, list) | 0.76 | 105 |
+| `list_files()` | 1.21 | 190 |
+| `list_files()` then a 100-line read of the design | 0.47 | 90 |
+| a 100-line read of the design | 0.42 | 81 (77 a dead `import subprocess`) |
+
+A seeded failure gets copied (the 3-round arm). A seeded success shifts the loss rather than ending
+it: after a working read, 77 of 200 branches reached for `import subprocess` and were refused.
+
+**Verdict.** Seeding works at fix starts, and what it seeds is what the model does next. The
+residual loss was the sandbox refusing the model's own habits, which led to labs/open-shim.
+
+**Details.** `labs/seeded-corrections/README.md`.
+
+## 2026-10-20 — real files in the sandbox (local 5090, Flash-Next IQ3_S via Basalt)
+
+The sandbox refused `open()`, `os`, `pathlib` and every file module, so the model's own file habits
+failed and it had to be told to use `read_file`. The arms gave it real files: first a shim
+`open()` over the tools, then a real-files child (Landlock: the game folder read/write, Python's
+library read only, every other path refused; seccomp keeps denying processes, network, links,
+mounts). Fix-start branches as above, 200 per arm:
+
+| Arm | Lost turns per branch | Branches with a loss |
+|---|---:|---:|
+| control | 0.84 | 125 |
+| shim `open()` | 0.39 | 57 |
+| real files | 0.23 | 34 |
+| real + list/read seed | 0.29 | 58 (57 `import subprocess`) |
+| real + list/read seed + nudge | 0.065 | 13 |
+| real + list/read + failing `import subprocess` seed + nudge | 0.03 | 6 |
+
+The nudge is one user line after the seeds: "Good, continue, and please do not use the subprocess
+module." Seeding the refusal it answers took the last arm to ~96% fewer lost turns than control.
+
+Full builds, the last arm against control on the same 5 designs, side by side (200-turn cap, fix
+builds included; pair 6, the only 3D design, not run):
+
+| Design | Ctrl lost | Arm lost | Ctrl fix builds | Arm fix builds | Nick, blind |
+|---|---:|---:|---:|---:|---|
+| hiragana | 10 | 7 | 0 | 0 | ctrl, "definitely superior" (graphics) |
+| frog platformer | 9 | 2 | 1 | 1 | ctrl, "approximately equal" |
+| frogs eating bugs | 5 | 1 | 1 | 0 | ctrl, slight lean (arm done at 73 turns, ctrl 107) |
+| wizard-cat deckbuilder | 8 | 5 | 0 | 0 | arm, "both are borked" |
+| monster collecting | 16 | 7 | 2 | 1 | arm, "both are borked" |
+
+Lost turns 22 against 48, fewer in every pair; every game built. Quality is a wash: 3–2 for control
+on near-identical content from identical designs, the one clear call on graphics. Nick: possibly
+"luck of the draw". 8 of 10 first builds ran to the cap without calling `done()` (labs/turn-cap).
+
+**Verdict.** Fewer wasted turns, no visible quality change. Nick: "unless the last build is
+significantly worse on open-shim, we're pushing it"; it was not.
+
+**Ruling.** Shipped as tested: the real-files child (`pyexec/landlock.py`, `pyexec/child.py`),
+`open()` and the file modules allowed, and every build (fix builds included) opening on the two
+seeded programs and the nudge from `prompts/build_seed/`, pinned through compaction. The refusal
+texts no longer say files are reached only through the tools. Landlock checked on the prod
+droplet: kernel 6.8, ABI 4 inside the app container. `build.txt` said there was no filesystem;
+the battery ran with that line, and it now says what is true (Nick: "lying to the model should be
+intentional"), unmeasured.
+
+**Details.** `labs/open-shim/README.md`.

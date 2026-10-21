@@ -1,5 +1,5 @@
-"""The confined side: every allowed import first, then the seccomp filter, then the model's program
-with each tool a stub over the socket. No filter, no program."""
+"""The confined side: Landlock and the seccomp filter, then the model's program in the game folder,
+with each tool a stub over the socket. No confinement, no program."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ import socket
 import sys
 import traceback
 
-from maestro.codegen.pyexec import rpc, seccomp
+from maestro.codegen.pyexec import landlock, rpc, seccomp
 
 TOOLS = {
     "list_files": (),
@@ -69,15 +69,18 @@ def _stub(sock, name):
 def main() -> int:
     sock = socket.socket(fileno=int(os.environ["PYEXEC_FD"]))
     code = sys.stdin.read()
+    root = os.environ["PYEXEC_ROOT"]
 
     try:
+        landlock.confine(root)
+        os.chdir(root)
         seccomp.install()
     except Exception as e:
         print(f"pyexec: could not confine the process: {e}", file=sys.stderr)
         return 3
 
-    for name in ("os", "socket", "subprocess", "shutil", "pathlib", "ctypes", "tempfile",
-                 "glob", "platform", "inspect", "pickle", "webbrowser", "urllib", "http"):
+    for name in ("socket", "subprocess", "ctypes", "tempfile", "platform", "inspect", "pickle",
+                 "webbrowser", "urllib", "http"):
         sys.modules.pop(name, None)
 
     out = io.StringIO()

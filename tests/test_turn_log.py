@@ -86,12 +86,13 @@ def test_a_landed_turn_is_appended_and_its_row_keeps_only_measurements(run):
     assert kinds == ["meta", "turn"]
     record = _log(run)[1]
     assert record["job_id"] == job["id"]
-    assert record["added"] == [{"role": "user", "content": "make a game"}]
+    assert record["added"][0] == {"role": "user", "content": "make a game"}
+    assert all(build_steps.is_seed(m) for m in record["added"][1:6])
     assert record["response"]["tool_calls"][0]["function"]["name"] == "python"
     assert (record["exec_seconds"], record["error"]) == (2.0, None)
 
     row = jobs.get_job(job["id"])
-    assert "body" not in row["payload"] and row["payload"]["n_messages"] == 1
+    assert "body" not in row["payload"] and row["payload"]["n_messages"] == 6
 
 
 def test_every_request_the_build_sent_replays_from_the_log(run):
@@ -142,10 +143,10 @@ def test_a_fix_appends_its_own_build_and_keeps_the_first(run):
 
     metas = [r for r in _log(run) if r["kind"] == "meta"]
     assert [m["build_id"] for m in metas] == [build_id, fix_id]
-    # The fix's first request is the note, not a replay of the build it is fixing.
     archived = turn_log.read_turn(RunState(run).run_dir, fix_job["id"])
-    assert len(archived["messages"]) == 1
+    assert len(archived["messages"]) == 6
     assert "the ship never moves" in archived["messages"][0]["content"]
+    assert all(build_steps.is_seed(m) for m in archived["messages"][1:])
 
 
 def test_the_cli_build_carries_the_default_step_cap(run):

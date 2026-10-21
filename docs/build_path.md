@@ -71,6 +71,9 @@ src/
                          runs it — the LEDGER of what that program called (which is what the feed
                          line, the repeat note and the `done` signal are all read off, since a
                          program's calls are not in its arguments),
+                         the seeded opening every build starts from (two programs from
+                         `prompts/build_seed/` run for real, then its nudge; kept right after the
+                         request through every compaction, labs/open-shim),
                          the transcript (each turn's thinking kept until the next cut, because the
                          server's cache is the sequence as generated), compaction (`CLAUDE.md`; the
                          note it ends with carries
@@ -150,17 +153,21 @@ src/
                          that leaves half the game at another version is not a restore. git is a
                          BOUNDARY — a snapshot that cannot be taken is logged and the build carries
                          on, since losing history is not a reason to lose a game.
-      pyexec/            where a model-written PROGRAM runs. `runner.run(code, tools)` answers
-                         with what it printed, the ledger of what it called, and whether it was
-                         refused, raised or ran out of time.
+      pyexec/            where a model-written PROGRAM runs. `runner.run(code, tools, root)`
+                         answers with what it printed, the ledger of what it called, and whether
+                         it was refused, raised or ran out of time. The program works in the game
+                         folder with real files: open(), os, pathlib, glob and shutil reach it and
+                         nothing else (labs/open-shim).
+                         landlock.py — the ruleset a process puts on ITSELF: the game folder read
+                         and write, Python's own library read only, every other path refused.
                          seccomp.py — the filter a process installs on ITSELF (`prctl`, via
-                         ctypes, no dependency and no privileges): open, exec, socket, clone and
-                         the rest denied outright. A DENY list is only enough because the confined
-                         program needs nothing from the kernel — every path and every render goes
-                         to the parent.
-                         child.py — imports first (openat is gone afterwards), filter second,
-                         model code third; a filter that will not install exits rather than
-                         running the program free.
+                         ctypes, no dependency and no privileges): exec, socket, clone, mount,
+                         links, chmod, signals and the rest denied outright. Opening and changing
+                         paths is left to Landlock; renders, art and the other tools go to the
+                         parent.
+                         child.py — imports first, Landlock and the filter second, model code
+                         third, in the game folder; a process that cannot be confined exits rather
+                         than running the program free.
                          rpc.py — length-prefixed JSON over one socket, one call in flight.
                          runner.py — spawns the child with a scrubbed environment, serves each
                          call from `build_tools`, caps the calls and the wall clock, and runs

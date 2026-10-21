@@ -4,6 +4,7 @@ or `Done`. build_chain enqueues each Infer as one llm job and re-enters on its c
 from __future__ import annotations
 
 import ast
+import functools
 import hashlib
 import json
 import logging
@@ -13,6 +14,7 @@ from typing import Dict, List, Optional, Union
 
 from llm_clients.message_builder import MessageBuilder
 from maestro.codegen import code_map, file_state, turn_log
+from maestro.codegen.build_state import BuildCursor
 from maestro.codegen.pyexec import runner
 from maestro.codegen.staging import game_dir
 from maestro.services import parse_args, parse_args_checked
@@ -93,6 +95,7 @@ def step(spec, run_dir, tools, cursor, result, error: Optional[str] = None) -> O
         cursor.started = True
         cursor.system = (_PROMPTS / "build.txt").read_text(encoding="utf-8")
         cursor.history = [{"role": "user", "content": cursor.request or _request_from(spec)}]
+        _seed(tools, cursor, run_dir)
         return _infer(run_dir, cursor)
 
     if error:
@@ -276,7 +279,7 @@ def _apply(tools, cursor, tc, run_dir) -> bool:
                                           "program as the `code` argument."})
         return False
 
-    outcome = runner.run(code, tools)
+    outcome = runner.run(code, tools, game_dir(run_dir))
     cursor.actions.extend(_actions_of(outcome))
     content = _result_of(outcome) + (_repeat_note(cursor, code, outcome) or "")
 
@@ -489,8 +492,46 @@ def is_note(m: dict) -> bool:
     return m.get("role") == "user" and str(m.get("content", "")).startswith(_NOTE_HEAD)
 
 
+_SEED = _PROMPTS / "build_seed"
+_SEEDED = "call_seeded_"
+
+
+@functools.lru_cache(maxsize=1)
+def _nudge_after_seed() -> str:
+    return (_SEED / "nudge.txt").read_text(encoding="utf-8").strip()
+
+
+def _seed(tools, cursor, run_dir) -> None:
+    """Open the build on prompts/build_seed/ programs, really run, then the nudge after them."""
+    scratch = BuildCursor(build_id=cursor.build_id, started=True)
+    for i, path in enumerate(sorted(_SEED.glob("[0-9]*.txt"))):
+        code = path.read_text(encoding="utf-8").strip()
+        tc = {"id": f"{_SEEDED}{i}", "type": "function",
+              "function": {"name": "python", "arguments": json.dumps({"code": code})}}
+        cursor.history.append({"role": "assistant", "content": "", "tool_calls": [tc]})
+        scratch.history = []
+        _apply(tools, scratch, tc, run_dir)
+        cursor.history.extend(scratch.history)
+    cursor.history.append({"role": "user", "content": _nudge_after_seed()})
+
+
+def is_seed(m: dict) -> bool:
+    ids = [tc.get("id", "") for tc in m.get("tool_calls") or []] + [m.get("tool_call_id") or ""]
+    return (any(i.startswith(_SEEDED) for i in ids)
+            or (m.get("role") == "user" and m.get("content") == _nudge_after_seed()))
+
+
 def compact(run_dir, cursor, keep_chars: int) -> int:
     """Returns rounds trimmed or dropped, 1 when only the dedupe pass changed anything, else 0."""
+    seeded = [m for m in cursor.history if is_seed(m)]
+    cursor.history = [m for m in cursor.history if not is_seed(m)]
+    try:
+        return _compact_rounds(run_dir, cursor, keep_chars)
+    finally:
+        cursor.history = cursor.history[:1] + seeded + cursor.history[1:]
+
+
+def _compact_rounds(run_dir, cursor, keep_chars: int) -> int:
     size = lambda msgs: sum(len(json.dumps(m)) for m in msgs)
     was = size(cursor.history)
     base = [m for m in cursor.history if not is_note(m)]

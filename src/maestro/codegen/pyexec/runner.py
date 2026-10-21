@@ -1,14 +1,6 @@
-"""Run one model-written program and answer with what it printed and what it did.
-
-The program is a build turn's whole action, so this is the boundary the build's trust ends at: it
-runs in a separate interpreter that has confined itself with seccomp, holds no environment, and
-reaches the project only by asking THIS process to do it. The tools it asks for are the same
-`build_tools` the build has always used, so the path jail and every reported failure are unchanged.
-
-A static check runs first. It is not the security boundary — the filter is — but it refuses the
-obvious reaches before any code runs, so the model reads "there is no os module here" instead of a
-traceback from inside a library it did not know it was calling.
-"""
+"""Run one model-written program in an interpreter Landlock and seccomp confine to the game folder's
+real files, and answer with what it printed and did. A static check first refuses obvious reaches so
+the model reads a plain refusal, not a traceback; the kernel, not the check, is the boundary."""
 
 from __future__ import annotations
 
@@ -21,6 +13,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from maestro.codegen.pyexec import rpc
@@ -31,14 +24,13 @@ TIMEOUT_SECONDS = 120.0
 MAX_STDOUT = 20_000
 MAX_CALLS = 400          # a program that calls a tool this many times is looping, not building
 
-# Pure-Python and side-effect free. Anything that opens a path, starts a process or reaches the
-# network is absent, and absent is what the filter enforces.
 SAFE_IMPORTS = frozenset({
     "json", "math", "random", "re", "itertools", "collections", "statistics", "string",
     "textwrap", "functools", "operator", "copy", "heapq", "bisect", "difflib", "hashlib",
-    "unicodedata", "datetime", "decimal", "fractions", "base64"})
+    "unicodedata", "datetime", "decimal", "fractions", "base64",
+    "os", "pathlib", "glob", "shutil", "io", "fnmatch"})
 BANNED_CALLS = frozenset({
-    "open", "eval", "exec", "compile", "__import__", "getattr", "setattr", "delattr",
+    "eval", "exec", "compile", "__import__", "getattr", "setattr", "delattr",
     "globals", "locals", "vars", "input", "breakpoint"})
 
 
@@ -70,8 +62,7 @@ def check(code: str) -> Optional[str]:
                 return _no_module(node.module or ".")
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             if node.func.id in BANNED_CALLS:
-                return (f"{node.func.id}() is not available here. Nothing ran. Files are reached "
-                        "only through read_file, write_file and edit_file.")
+                return f"{node.func.id}() is not available here. Nothing ran."
         elif isinstance(node, ast.Attribute) and node.attr.startswith("__"):
             return f"{node.attr} is not available here. Nothing ran."
         elif isinstance(node, ast.Name) and node.id.startswith("__"):
@@ -81,17 +72,17 @@ def check(code: str) -> Optional[str]:
 
 def _no_module(name: str) -> str:
     return (f"there is no module {name!r} in this session, and nothing in the program ran. "
-            "The project is reached only through the tools; the standard modules that ARE "
-            f"importable are {', '.join(sorted(SAFE_IMPORTS))}.")
+            f"The standard modules that ARE importable are {', '.join(sorted(SAFE_IMPORTS))}.")
 
 
-def run(code: str, tools: Dict, timeout: float = TIMEOUT_SECONDS) -> Outcome:
+def run(code: str, tools: Dict, root, timeout: float = TIMEOUT_SECONDS) -> Outcome:
     refusal = check(code)
     if refusal:
         return Outcome(stdout="", refused=refusal)
 
     parent, child = socket.socketpair()
-    env = {"PYEXEC_FD": str(child.fileno()), "PATH": "/usr/bin:/bin",
+    env = {"PYEXEC_FD": str(child.fileno()), "PYEXEC_ROOT": str(Path(root).resolve()),
+           "PATH": "/usr/bin:/bin",
            "PYTHONPATH": os.pathsep.join(os.path.abspath(p) for p in sys.path if p), "PYTHONHASHSEED": "0",
            "PYTHONDONTWRITEBYTECODE": "1"}
     proc = subprocess.Popen(
@@ -134,9 +125,7 @@ def run(code: str, tools: Dict, timeout: float = TIMEOUT_SECONDS) -> Outcome:
         result.timed_out = True
     finally:
         result.ledger = ledger
-        if answered:
-            # It has said everything it had to say; let it exit on its own rather than counting
-            # our own kill as its death.
+        if not result.timed_out:
             try:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:

@@ -37,6 +37,9 @@ reads not needing to enter the transcript, and a much higher "tools per turn".
 While we trust the model to not be dumb, it's not foolproof, and as such we need to make decisions
 about what access to give them. Our stance is that the class of model is not quite strong enough to
 get full sh access, and we sandbox the python it runs. An allow list of commands is safer currently.
+Inside that sandbox the model gets the file habits it already has: real files in the game folder
+through open(), os and pathlib, with the kernel (Landlock) refusing every path outside it. Our own
+tools are kept for what the model cannot do itself, like rendering, art and checks.
 
 ### Local is second class
 

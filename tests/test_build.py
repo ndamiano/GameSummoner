@@ -89,20 +89,41 @@ def test_compact_noop_when_it_fits(tmp_path):
     assert cursor.history == before
 
 
-def test_the_first_turn_sends_the_request_and_nothing_else(tmp_path, tools):
+def test_the_first_turn_sends_the_request_then_the_seeded_opening_run_for_real(tmp_path, tools):
+    (tmp_path / "game" / "design").mkdir()
+    (tmp_path / "game" / "design" / "design.md").write_text("# 0. SCOPE\nA card game.\n")
     cursor = _cursor()
     spec = {"request": "a card game", "design": {"look": "inky woodcut", "audio": "lute",
                                                  "mechanics": ["draw five cards a turn"]}}
     out = build_steps.step(spec, tmp_path, tools, cursor, {})
     assert isinstance(out, build_steps.Infer)
-    assert out.messages[-1]["content"] == "a card game"
+    sent = out.messages[1:]
+    assert [m["role"] for m in sent] == ["user", "assistant", "tool", "assistant", "tool", "user"]
+    assert sent[0]["content"] == "a card game"
+    assert "design/design.md" in sent[2]["content"] and "A card game." in sent[2]["content"]
+    assert "no module 'subprocess'" in sent[4]["content"]
+    assert sent[5]["content"] == "Good, continue, and please do not use the subprocess module."
+    assert cursor.turn == 0
     assert [t["function"]["name"] for t in out.schemas] == ["python"]
 
 
 def test_fix_note_replaces_the_request(tmp_path, tools):
     cursor = _cursor(request="the player cannot move")
     out = build_steps.step({"request": "a card game"}, tmp_path, tools, cursor, {})
-    assert "the player cannot move" in out.messages[-1]["content"]
+    assert out.messages[1]["content"] == "the player cannot move"
+    assert out.messages[-1]["content"] == build_steps._nudge_after_seed()
+
+
+def test_the_seeded_opening_stays_right_after_the_request_through_compaction(tmp_path, tools):
+    (tmp_path / "game" / "game.js").write_text("x")
+    cursor = _cursor()
+    build_steps.step({"request": "make a game"}, tmp_path, tools, cursor, {})
+    seeded = cursor.history[1:6]
+    cursor.history += _history()[1:]
+    assert build_steps.compact(tmp_path, cursor, keep_chars=1200) > 0
+    assert cursor.history[0]["content"] == "make a game"
+    assert cursor.history[1:6] == seeded
+    assert build_steps.is_note(cursor.history[6])
 
 
 def test_done_ends_the_build(tmp_path, tools):
@@ -467,6 +488,7 @@ def test_generate_media_reaches_the_tool_and_its_path_reaches_the_transcript(tmp
         seen.update(kw)
         return {"ok": True, "path": "assets/goblin.glb", "status": "rendering"}
 
+    (tmp_path / "game").mkdir()
     cursor = _cursor()
     spy_tools = {"generate_media": _spy}
     build_steps.step({}, tmp_path, spy_tools, cursor, {})
@@ -727,7 +749,7 @@ def test_a_turns_thinking_rides_the_transcript(tmp_path, tools):
     build_steps.step({}, tmp_path, tools, cursor, {})
     build_steps.step({}, tmp_path, tools, cursor, _reply(code="print(1)", reasoning="plan it"))
     build_steps.step({}, tmp_path, tools, cursor, _reply(content="hm", reasoning="no call"))
-    replies = [m for m in cursor.history if m["role"] == "assistant"]
+    replies = [m for m in cursor.history if m["role"] == "assistant" and not build_steps.is_seed(m)]
     assert [m["reasoning_content"] for m in replies] == ["plan it", "no call"]
 
 

@@ -77,14 +77,15 @@ def _replay(run_dir) -> Iterator[Tuple[Dict, Dict, List[Dict], int]]:
 def _compacted(messages: List[Dict], record: Dict) -> List[Dict]:
     """Replay one compaction exactly as build_steps.compact performed it."""
     from maestro.codegen import build_steps
-    messages = [m for m in messages if not build_steps.is_note(m)]
+    seeded = [m for m in messages if build_steps.is_seed(m)]
+    messages = [m for m in messages if not build_steps.is_note(m) and not build_steps.is_seed(m)]
     messages = build_steps.drop_read_only_rounds(
         build_steps.dedupe_bodies(build_steps.strip_reasoning(messages)))
     if record["trimmed"]:
         messages = build_steps.trim_bodies(messages, record["trimmed"])
     groups = build_steps.rounds(messages)
     kept = [m for g in groups[record["dropped"]:] for m in g]
-    return messages[:1] + [{"role": "user", "content": record["note"]}] + kept
+    return messages[:1] + seeded + [{"role": "user", "content": record["note"]}] + kept
 
 
 def _chars_of(messages: List[Dict]) -> int:
