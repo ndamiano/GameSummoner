@@ -117,7 +117,7 @@ describe('GameView after a failed build', () => {
         mount(detail({ building: true, status: 'building' }),
             detail({ built: true, has_game: true, status: 'failed' }))
         vi.spyOn(api, 'getGameEvents').mockResolvedValue([])
-        await screen.findByRole('button', { name: /stop and keep it/i })
+        await screen.findByRole('button', { name: /pause/i })
 
         act(() => { listener?.({ type: 'build_done', run_id: 'r1', ok: false }) })
 
@@ -133,10 +133,12 @@ describe('GameView during a build', () => {
         expect(screen.getByText('summoning')).toBeTruthy()
     })
 
-    it('swaps Pause for Resume while paused', async () => {
-        mount(detail({ building: true, status: 'paused' }))
+    it('swaps Pause for Resume while paused and keeps what was built playable', async () => {
+        mount(detail({ building: false, built: true, has_game: true, status: 'paused' }))
 
         expect(await screen.findByRole('button', { name: /^resume$/i })).toBeTruthy()
         expect(screen.queryByRole('button', { name: /^pause$/i })).toBeNull()
+        expect(screen.getByText('paused')).toBeTruthy()
+        expect(screen.getByRole('button', { name: /rebuild from the request/i })).toBeTruthy()
     })
 })

@@ -65,7 +65,7 @@ def evict(run_id: str) -> None:
     from maestro.codegen import build_chain
     from maestro.codegen.staging import RUNTIME_DIR
     from maestro.state import RunState
-    if build_chain.is_active(run_id):
+    if build_chain.is_running(run_id):
         raise RuntimeError(f"{run_id} has a build in flight — not evicting under it")
     size = s3.head(_key(run_id)) if s3.configured() else None
     if not size:

@@ -46,7 +46,6 @@ def events(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _no_db(monkeypatch):
-    monkeypatch.setattr(run_mod.games, "create_game", lambda *a, **k: None)
     monkeypatch.setattr(run_mod.games, "update_prompt_meta", lambda *a, **k: None)
     monkeypatch.setattr(run_mod.games, "charge_game", lambda *a, **k: None)
     monkeypatch.setattr(design.games, "create_build", lambda *a, **k: "dbuild")
@@ -154,7 +153,7 @@ def test_the_decisions_are_banded_by_first_playable_and_written_into_one_spec(
     assert spec["ask"] == ASK and ASK in spec["request"] and "design/design.md" in spec["request"]
     assert staging.spec_path(RunState(run_id).run_dir).read_text() == SPEC
     assert [e[0] for e in events] == ["prompt_proposed"]
-    assert kicked == [(run_id, {"kind": "build"})]
+    assert kicked == [(run_id, {"kind": "build", "designed": True})]
     assert finished == [("dbuild", "succeeded")]
 
 
@@ -172,7 +171,7 @@ def test_a_write_that_stops_early_is_asked_to_continue(tmp_runs, events, connect
     design.on_complete(run_id, "dbuild", _reply(REST), None, "write")
 
     assert staging.spec_path(RunState(run_id).run_dir).read_text() == HALF + REST
-    assert kicked == [(run_id, {"kind": "build"})]
+    assert kicked == [(run_id, {"kind": "build", "designed": True})]
 
 
 @pytest.mark.parametrize("step, result, error", [
@@ -212,8 +211,8 @@ def test_a_write_the_worker_failed_leaves_the_ask_as_the_prompt(tmp_runs, events
     assert finished == [("dbuild", "failed")]
 
 
-def test_an_enqueue_that_is_refused_lands_the_ask_immediately(tmp_runs, events, connector,
-                                                              monkeypatch):
+def test_an_enqueue_that_is_refused_builds_from_the_ask_at_once(tmp_runs, events, connector,
+                                                                kicked, monkeypatch):
     monkeypatch.setattr(design.jobs, "enqueue_job",
                         lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("no compute")))
     run_id = run_mod.create_run("u1")
@@ -222,6 +221,29 @@ def test_an_enqueue_that_is_refused_lands_the_ask_immediately(tmp_runs, events, 
 
     assert RunState(run_id).read_spec()["request"] == ASK
     assert [e[0] for e in events] == ["prompt_proposed"]
+    assert kicked == [(run_id, {"kind": "build", "designed": True})]
+
+
+def test_a_step_that_lands_after_a_pause_is_dropped_and_resume_designs_from_the_start(
+        tmp_runs, events, connector, enqueued, kicked, finished):
+    run_id = run_mod.create_run("u1")
+    _decided(run_id)
+    design.on_complete(run_id, "dbuild", _reply(HALF), None, "write")
+    asked = len(enqueued)
+    design.games.move(run_id, "paused")
+
+    design.on_complete(run_id, "dbuild", _reply(REST), None, "write")
+
+    assert len(enqueued) == asked and kicked == []
+    assert RunState(run_id).read_spec().get("request") is None
+    assert finished == [("dbuild", "stopped")]
+
+    design.enqueue(run_id, ASK)
+
+    assert [e[1] for e in enqueued[asked:]] == ["decide"]
+    assert not (RunState(run_id).run_dir / "design" / "spec.md").exists()
+    row = design.games.game(run_id)
+    assert (row["stage"], row["status"]) == ("designing", "running")
 
 
 def test_the_human_edit_moves_only_the_request(tmp_runs, events, connector, enqueued, kicked):

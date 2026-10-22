@@ -58,51 +58,60 @@ def test_a_missing_game_folder_passes(tmp_path):
     assert screen_artifact(tmp_path) is None
 
 
-# ── The held path: what a hit does to the finalize ───────────────────────────────────────────
 
 
 @pytest.fixture
-def finalize_env(monkeypatch, tmp_path):
+def held_env(monkeypatch, tmp_runs):
+    from db import games
     from maestro.codegen import build_chain
+    from maestro.state import RunState
 
-    seen = {"status": None, "attempt": None, "staged": False, "snapped": False}
-    monkeypatch.setattr(build_chain, "_emit", lambda *a, **k: None)
-    monkeypatch.setattr(build_chain.games, "set_status",
-                        lambda rid, s: seen.__setitem__("status", s))
-    monkeypatch.setattr(build_chain.games, "build_finished",
-                        lambda bid, s, steps=None: seen.__setitem__("attempt", s))
-    monkeypatch.setattr(build_chain.jobs, "abandon_build_jobs", lambda bid, err: 1)
+    seen = {"staged": False, "snapped": False, "events": []}
+    monkeypatch.setattr(build_chain, "_emit",
+                        lambda kind, run_id, **kw: seen["events"].append(kind))
     monkeypatch.setattr(build_chain, "stage_for_play",
                         lambda *a, **k: seen.__setitem__("staged", True))
     monkeypatch.setattr(build_chain.snapshots, "take",
                         lambda *a, **k: seen.__setitem__("snapped", True))
-    build_state.save(tmp_path, BuildCursor(build_id="b1", step=5))
-    return build_chain, seen
+    monkeypatch.setattr(build_chain.threading, "Thread", lambda **k: type(
+        "T", (), {"start": lambda self: None})())
+    games.create_game("g1", "u1")
+    games.move("g1", "running", "building")
+    bid = games.create_build("g1", kind="build")
+    games.build_started(bid)
+    cursor = BuildCursor(build_id=bid, step=5)
+    build_state.save(cursor)
+    return build_chain, cursor, RunState("g1"), seen
 
 
-def test_flagged_text_holds_the_build(finalize_env, tmp_path):
-    """A playable game whose text trips the screen never reaches /play: status `held`, nothing
-    staged, nothing snapshotted, and the cursor does not claim ok."""
-    build_chain, seen = finalize_env
-    _game(tmp_path, {"index.html": f"<html>{FLAGGED}</html>"})
-    build_chain.stop(str(tmp_path))
-    assert seen["status"] == "held"
-    assert seen["attempt"] == "held"
+def _end(build_chain, cursor, rs, how):
+    if how == "finalize":
+        build_chain._finalize("g1", rs, cursor, ok=True)
+    else:
+        build_chain.pause("g1")
+
+
+@pytest.mark.parametrize("how", ["finalize", "pause"])
+def test_flagged_text_holds_the_game_and_records_the_violation(held_env, how):
+    from db import games
+    build_chain, cursor, rs, seen = held_env
+    _game(rs.run_dir, {"index.html": f"<html>{FLAGGED}</html>"})
+    _end(build_chain, cursor, rs, how)
+    assert games.game("g1")["status"] == "held"
+    assert [b["status"] for b in games.builds_for("g1")] == ["held"]
     assert seen["staged"] is False and seen["snapped"] is False
-    assert build_state.load(tmp_path).ok is False
-
-
-def test_a_held_finalize_records_the_violation(finalize_env, tmp_path):
-    build_chain, _ = finalize_env
-    _game(tmp_path, {"index.html": f"<html>{FLAGGED}</html>"})
-    build_chain.stop(str(tmp_path))
+    assert seen["events"] == ["build_done"] and not build_state.load("g1").ok
     rows = events.list_violations()
     assert rows and rows[0]["source"] == "artifact:index.html"
     assert rows[0]["category"] == "csam_combination"
 
 
-def test_a_clean_finalize_stages_as_before(finalize_env, tmp_path):
-    build_chain, seen = finalize_env
-    _game(tmp_path, {"index.html": "<html>a space pirate game</html>"})
-    build_chain.stop(str(tmp_path))
-    assert seen["status"] == "built" and seen["staged"] is True
+@pytest.mark.parametrize("how, where", [("finalize", ("checking", "running")),
+                                        ("pause", ("building", "paused"))])
+def test_a_clean_game_is_staged(held_env, how, where):
+    from db import games
+    build_chain, cursor, rs, seen = held_env
+    _game(rs.run_dir, {"index.html": "<html>a space pirate game</html>"})
+    _end(build_chain, cursor, rs, how)
+    assert seen["staged"] is True
+    assert (games.game("g1")["stage"], games.game("g1")["status"]) == where

@@ -104,7 +104,7 @@ export const GameView: React.FC<{ runId: string; onChanged: () => void; onBack: 
                 case 'build_started':
                     setBuilding(true); setStatus('building'); break
                 case 'build_paused':
-                    setStatus('paused'); break
+                    setBuilding(false); setStatus('paused'); load(); onChanged(); break
                 case 'build_resumed':
                     setStatus('building'); break
                 case 'build_done':
@@ -143,10 +143,9 @@ export const GameView: React.FC<{ runId: string; onChanged: () => void; onBack: 
     }
     const build = () => startBuild(false)
     const regenerate = () => startBuild(true)
-    const pause = () => { setStatus('paused'); act(() => api.pauseGame(runId), 'Pause failed', false) }
+    const pause = () => { setBuilding(false); setStatus('paused'); act(() => api.pauseGame(runId), 'Pause failed') }
     const buff = () => act(() => api.resumeGame(runId), 'Buff failed')
-    const resume = () => { setStatus('building'); act(() => api.resumeGame(runId), 'Resume failed', false) }
-    const stop = () => act(() => api.stopGame(runId), 'Stop failed', false)
+    const resume = () => { setBuilding(true); setStatus('building'); act(() => api.resumeGame(runId), 'Resume failed', false) }
     const renderArt = () => act(async () => { setRenderPending(true); await api.renderAssets(runId) }, 'Render failed', false)
     const sendFix = (note: string, source = 'note') => {
         closePlay()
@@ -181,7 +180,7 @@ export const GameView: React.FC<{ runId: string; onChanged: () => void; onBack: 
     const stage = held ? 'held' : stageFor(building, detail.built, detail.prompt == null)
     const awry = !building && !held && detail.status === 'failed'
     const pill = held ? STATUS_PILL.held
-        : STATUS_PILL[building ? status : awry ? 'failed' : detail.built ? 'built' : 'idle']
+        : STATUS_PILL[building ? status : awry ? 'failed' : status === 'paused' ? 'paused' : detail.built ? 'built' : 'idle']
     const budget = budgetFraction(detail.budget_pct_remaining)
 
     return (
@@ -200,14 +199,11 @@ export const GameView: React.FC<{ runId: string; onChanged: () => void; onBack: 
                     </div>
 
                     <div className="flex gap-2 flex-wrap items-center">
-                        {building && status !== 'paused' && (
+                        {building && (
                             <Button onClick={pause} disabled={acting}>Pause</Button>
                         )}
-                        {building && status === 'paused' && (
+                        {!building && !held && status === 'paused' && (
                             <Button variant="primary" onClick={resume} disabled={acting}>Resume</Button>
-                        )}
-                        {building && (
-                            <Button variant="ghost" onClick={stop} disabled={acting}>Stop and keep it</Button>
                         )}
                         {!building && !held && detail.built && (
                             <Button variant="ghost" onClick={build} disabled={acting}>Rebuild from the request</Button>

@@ -25,10 +25,17 @@ src/
                          chain of `llm` jobs tagged metadata.stage="build"; /worker/complete routes
                          here. advance() runs ALL local work — tool dispatch, staging —
                          synchronously and SUSPENDS only at a real inference (enqueue one llm job +
-                         return; the process is free to die). Never more than one turn in flight per
-                         run, and advance runs only in the control-plane process (completion handler
-                         + reaper), so an in-process lock serializes them. kickoff/pause/resume/stop/
-                         is_active/status_of are the API/CLI entry points. `kickoff(fresh=True)` is
+                         return; the process is free to die). WHERE A GAME STANDS is two columns
+                         on its games row and nowhere else: `stage` (designing, building, checking)
+                         and `status` (running, paused, failed, succeeded, held). Every change goes
+                         through `games.move`, one guarded UPDATE that only lands while the row is
+                         still where the caller saw it, so of two racing callers exactly one wins:
+                         one finalize moves building→checking and starts the gates, a gate's fix
+                         (`kickoff(after=build)`) starts only while that build is still the game's
+                         latest and the game still running, and a landed turn whose build is not
+                         the latest is dropped. A per-run flock serializes advance across every
+                         process that drives builds (control plane, CLI, TUI). kickoff/pause/
+                         resume/is_running are the API/CLI entry points. `kickoff(fresh=True)` is
                          the FROM-SCRATCH build: empty the game folder, then seed. Only the button
                          asks for it — a plain re-trigger, a resume and a fix all carry the folder
                          forward on purpose. It snapshots before deleting and preempts the art the
@@ -37,25 +44,16 @@ src/
                          Without it a second attempt opens on the dead build's half-written files:
                          the model reads them, believes them, and re-asks for art it already has
                          under new ids (measured 2026-08-01: three naming schemes for one cast, 40
-                         renders, no finished game). `stop` ends EVERYTHING the run has in
-                         flight, at whatever stage it is in, and KEEPS what it wrote (the owner
-                         reaches it over their own runs, an operator over ANY —
-                         `routers/admin.py`, which is the hand on a run renting cards for
-                         somebody else): every job the
-                         run owns on every queue fails and releases its reservation — the design's
-                         llm turn, the build's, the art behind it, a world's legs — claimed ones
-                         included, since the worker holding one may be the thing that hung. Every
-                         open builds row records `stopped`, which is what REFUSES a job a lingering
-                         thread enqueues afterwards. A build with a cursor is finalized where it
-                         stands, playability judged as it is at the step cap (an index.html) — a
-                         run ended by hand over a game that runs is not a run that failed — and a
-                         run still being DESIGNED ends `failed` with its ask left as the prompt,
-                         so the page has something to rebuild from. `pause` DEQUEUES: a
-                         still-queued turn is cancelled and its step refunded, a claimed one is left
-                         to its worker and applied when it lands, and the build parks at the ENQUEUE
-                         boundary rather than the top of advance. That boundary is what makes pause
-                         cost nothing: parking at the top discarded a turn the GPU had already been
-                         paid for, and announced itself on every reaper re-drive (one feed line
+                         renders, no finished game). `pause` parks the game at whatever stage it
+                         is in (the owner over their own runs, an operator over ANY —
+                         `routers/admin.py`): every pending job on every queue is cancelled, the
+                         queue admits nothing new for a paused game, a claimed turn is left to its
+                         worker and applied when it lands, and whatever is playable is staged so
+                         it can be played meanwhile. `resume` picks it up in the stage it stopped
+                         in: a design starts again, a build re-sends its turn, checking runs the
+                         gates again. Gates run on a thread of the control plane, so a restart
+                         re-runs them for every game left running in checking (`recover`). The
+                         reaper re-drives a running build with no job in flight (one feed line
                          every 5s, forever). A refused compute budget PREEMPTS the run's
                          still-pending asset jobs before giving up — gameplay beats art. A landed
                          turn is ARCHIVED to the run dir before its jobs row is emptied
@@ -98,14 +96,12 @@ src/
                          serialized — a JSON body shows every quote as \" and the model copies that
                          into old_text, where it matches nothing (measured 2026-07-28: 17 of one
                          build's 32 turns, resent byte-identical).
-      build_state.py     the durable build CURSOR (runs/<id>/build_state.json) — phase, step count,
-                         the PAUSE flag, the growing transcript, and the
+      build_state.py     the durable build CURSOR, on the build's own row (builds.cursor) — step
+                         count, the growing transcript, and the
                          read→edit tool grounding, rehydrated into build_tools each completion (a
                          fresh process would else refuse a resumed edit). Job metadata carries only
-                         {stage,run_id,build_id}; this file is the single source the completion
-                         reloads, advances, rewrites. Pause lives here and not in memory: a control
-                         plane that restarts mid-build holds nothing, while its turns keep
-                         completing.
+                         {stage,run_id,build_id}; the row is the single copy the completion
+                         reloads, advances, rewrites. Where the game stands is never here.
       turn_log.py        the run dir's own copy of the conversation (runs/<id>/turns.jsonl), and
                          the only one that lasts: a turn's request IS the transcript so far, so a
                          payload per jobs row stored the same conversation once per turn (951 MB of
@@ -135,7 +131,7 @@ src/
       archive.py         the run dir's OFF-BOX copy. tools/s3.py is a minimal SigV4 client over
                          `requests` — a wrong signature is a loud 403 and the payload hash rides
                          the request, so a signing bug cannot silently succeed. A settled finalize
-                         (no gate fix kicked, not stopped by hand) uploads the run dir as one
+                         (no gate fix kicked, not paused) uploads the run dir as one
                          tar.gz,
                          minus a world's `world_build/` — the world a game plays was published
                          into the game folder, and the stages' working material is hundreds of
@@ -338,7 +334,7 @@ src/
                          (tried as module then script — authored games import three); a
                          redeclaration note lists every declaration site; a parse note says fix
                          the whole file. Stops on MAX_ROUNDS, on the same error two rounds
-                         running, and never touches a build a human stopped. A probe that cannot
+                         running, and starts no fix once the game is paused. A probe that cannot
                          run logs and stands aside — the gate is a boundary like snapshots.
                          Round state in runs/<id>/error_gate.json.
       play_gate.py       the PLAY GATE (branch experiment) — after the error gate is clean, play
@@ -394,7 +390,7 @@ src/
                          uncaught error becomes).
       run.py             create_run / propose_prompt (the designer, synchronously) / set_prompt /
                          run_build (CLI: kickoff +
-                         block-poll the cursor) / change_from_note + the CLI. The web build/change path is
+                         block-poll the game's status) / change_from_note + the CLI. The web build/change path is
                          fire-and-forget through build_chain.kickoff, not run.py.
     services.py          parse_args — any argument shape a local model returns → a dict.
                          parse_args_checked also says whether anything was READABLE: a call cut off

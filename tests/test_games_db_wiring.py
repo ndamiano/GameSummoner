@@ -34,10 +34,11 @@ def _user(handle="alice", credits=10):
     return u, {"Authorization": f"Bearer {store.issue_token(u.id)}"}
 
 
-def _make_game(user_id, spec):
+def _make_game(user_id, spec, status="paused"):
     run_id = create_run(user_id)
     RunState(run_id).write_spec(spec)
     games.update_prompt_meta(run_id, spec.get("title", ""))
+    games.move(run_id, status, "building")
     return run_id
 
 
@@ -56,14 +57,32 @@ def test_list_and_detail_come_from_the_db(client):
 
 def test_a_failed_build_reads_failed_whether_or_not_it_left_a_playable_game(client, monkeypatch):
     user, headers = _user()
-    run_id = _make_game(user.id, {"request": "make a moon miner", "title": "Moon Miner"})
-    games.set_status(run_id, "failed")
+    run_id = _make_game(user.id, {"request": "make a moon miner", "title": "Moon Miner"},
+                        status="failed")
     detail = client.get(f"/api/games/{run_id}", headers=headers).json()
     assert (detail["status"], detail["built"]) == ("failed", False)
 
     monkeypatch.setattr("api.routers.games.is_staged", lambda rid: rid == run_id)
     detail = client.get(f"/api/games/{run_id}", headers=headers).json()
     assert (detail["status"], detail["built"]) == ("failed", True)
+
+
+def test_a_paused_game_with_a_staged_copy_is_listed_paused_still_plays_and_renders_nothing(
+        client, monkeypatch):
+    user, headers = _user()
+    run_id = _make_game(user.id, {"request": "make a moon miner", "title": "Moon Miner"})
+    games.charge_game(run_id, 1, 10_000_000)
+    monkeypatch.setattr("api.routers.games.is_staged", lambda rid: rid == run_id)
+
+    (row,) = client.get("/api/games", headers=headers).json()
+    assert (row["paused"], row["building"], row["built"], row["status"]) == \
+        (True, False, True, "paused")
+    r = client.post(f"/api/games/{run_id}/play-session", headers=headers)
+    assert r.status_code == 200 and "/handoff?t=" in r.json()["url"]
+    for path, body in (("assets", None), ("assets/hero/regenerate", {"prompt": "a knight"})):
+        r = client.post(f"/api/games/{run_id}/{path}", headers=headers, json=body)
+        assert (r.status_code, r.json()["detail"]) == (409, "this game is paused — resume it first")
+    assert jobs.has_active_batch(run_id) is False
 
 
 def test_new_game_creates_the_run_and_starts_its_design(client, monkeypatch):
@@ -198,7 +217,8 @@ def test_a_game_out_of_compute_is_402_on_every_gpu_endpoint(client, monkeypatch)
     """Credits buy a grant ONCE; the grant is what each later build/change/skin spends. A game that
     has burned it must be refused before it takes the GPU slot, not after."""
     user, headers = _user()
-    run_id = _make_game(user.id, {"request": "make a moon miner", "title": "Moon Miner"})
+    run_id = _make_game(user.id, {"request": "make a moon miner", "title": "Moon Miner"},
+                        status="succeeded")
     monkeypatch.setattr(build_chain, "kickoff", lambda rid, **kw: "bid")
 
     assert client.post(f"/api/games/{run_id}/build", headers=headers).status_code == 200
@@ -219,7 +239,8 @@ def test_detail_reports_remaining_net_of_queued_work(client):
     queue, so a bar drawn from spend alone would read full while a build's jobs are already spoken
     for. budget_pct_remaining is computed from compute_remaining, which reserves the estimate."""
     user, headers = _user()
-    run_id = _make_game(user.id, {"request": "make a moon miner", "title": "Moon Miner"})
+    run_id = _make_game(user.id, {"request": "make a moon miner", "title": "Moon Miner"},
+                        status="succeeded")
     games.charge_game(run_id, 1, 1_000_000)
     jobs.enqueue_job("comfy", {}, game_id=run_id, build_id="b1")
 
@@ -296,7 +317,8 @@ def test_regenerate_enqueues_one_image_job_with_the_new_prompt(client, monkeypat
     import maestro.codegen.assets as assets_mod
 
     user, headers = _user()
-    run_id = _make_game(user.id, {"request": "make a moon miner", "title": "Moon Miner"})
+    run_id = _make_game(user.id, {"request": "make a moon miner", "title": "Moon Miner"},
+                        status="succeeded")
     _write_assets(run_id, {"images": [{"id": "hero", "file": "assets/hero.webp",
                                       "prompt": "a hero"}]})
     games.charge_game(run_id, 1, 10_000_000)
@@ -328,7 +350,8 @@ def test_regenerate_merge_is_attributed_to_the_game(client, monkeypatch):
     from tools.execution_context import get_run_id
 
     user, headers = _user()
-    run_id = _make_game(user.id, {"request": "make a moon miner", "title": "Moon Miner"})
+    run_id = _make_game(user.id, {"request": "make a moon miner", "title": "Moon Miner"},
+                        status="succeeded")
     _write_assets(run_id, {"images": [{"id": "hero", "file": "assets/hero.webp",
                                       "prompt": "a hero"}]})
     games.charge_game(run_id, 1, 10_000_000)
@@ -367,7 +390,8 @@ def test_regenerate_bad_asset_id_is_400(client):
 
 def test_regenerate_out_of_compute_is_402(client):
     user, headers = _user()
-    run_id = _make_game(user.id, {"request": "make a moon miner", "title": "Moon Miner"})
+    run_id = _make_game(user.id, {"request": "make a moon miner", "title": "Moon Miner"},
+                        status="succeeded")
     games.charge_game(run_id, 1, MICROS_PER_CREDIT)
     _burn(run_id, MICROS_PER_CREDIT)
     r = client.post(f"/api/games/{run_id}/assets/hero/regenerate", headers=headers,

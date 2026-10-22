@@ -12,9 +12,8 @@ VERBS = ["Conjuring", "Invoking", "Scrying", "Weaving runes", "Binding sprites",
          "Stirring the cauldron", "Channelling mana", "Chanting", "Drawing the circle"]
 STAGES = {"design": "design", "build": "build", "change": "build", "fix": "test"}
 LABELS = {"design": "design", "build": "build", "test": "play-test"}
-ENDED = {"building": ("33", "■ stalled"), "built": ("32", "✓ built"), "ready": ("32", "✓ ready"),
-         "stopped": ("33", "■ stopped"), "failed": ("31", "✗ failed"), "held": ("33", "■ held"),
-         "draft": ("2", "· draft")}
+ENDED = {"running": ("33", "■ stalled"), "succeeded": ("32", "✓ built"),
+         "paused": ("33", "■ paused"), "failed": ("31", "✗ failed"), "held": ("33", "■ held")}
 QUEUES = ["llm", "decide", "comfy"]
 BRAND = ("38;2;242;112;63" if os.environ.get("COLORTERM") in ("truecolor", "24bit")
          else "38;5;209")
@@ -41,7 +40,7 @@ class Game:
         self.request = request
         self.run_id = run_id
         self.created = created or time.time()
-        self.status = "building"
+        self.status = "running"
         self.live = True
         self.failed = None
         self.stages: dict[str, dict] = {}
@@ -57,7 +56,7 @@ class Game:
 
     @property
     def active(self) -> bool:
-        return self.failed is None and self.status == "building" and self.live
+        return self.failed is None and self.status == "running" and self.live
 
     @property
     def stage(self) -> str:
@@ -141,7 +140,7 @@ class Screen:
             if self.confirm:
                 game, note = self.confirm
                 if ch in "yY":
-                    action, self.typed = ("stop_change", game, note), ""
+                    action, self.typed = ("pause_change", game, note), ""
                 self.confirm = None
                 i += 3 if data.startswith("\x1b[", i) else 1
                 continue
@@ -172,7 +171,7 @@ class Screen:
         if game is None:
             self.typed = ""
             return ("summon", text)
-        if game.status == "building":
+        if game.status == "running":
             self.confirm = (game, text)
             return None
         self.typed = ""
@@ -279,7 +278,7 @@ class Screen:
     def _input(self) -> str:
         cursor = self._c("5", "▏")
         if self.confirm:
-            return (f"  {self._c('33;1', 'stop the build and apply this change?')} "
+            return (f"  {self._c('33;1', 'pause the build and apply this change?')} "
                     f"{self._c('1', 'y')}{self._c('2', '/n')}")
         if self.picked is None:
             return f"  {self._c(BRAND + ';1', 'summon ›')} {self.typed}{cursor}"

@@ -6,6 +6,7 @@ disk holds the version that did.
 
 import pytest
 
+from db import games
 from maestro.codegen import build_chain, build_state, build_steps, snapshots
 from maestro.codegen.build_state import BuildCursor
 from maestro.codegen.staging import game_dir
@@ -123,14 +124,15 @@ def test_a_missing_git_does_not_end_a_build(run, monkeypatch):
 
 def test_a_playable_finalize_keeps_the_game(run, monkeypatch):
     monkeypatch.setattr(build_chain, "stage_for_play", lambda *a: None)
-    monkeypatch.setattr(build_chain.games, "set_status", lambda *a, **k: None)
-    monkeypatch.setattr(build_chain.games, "build_finished", lambda *a, **k: None)
     monkeypatch.setattr(build_chain, "_emit", lambda *a, **k: None)
+    monkeypatch.setattr(build_chain, "_post_finalize", lambda *a: None)
     monkeypatch.setattr(build_chain.build_steps, "step", lambda *a, **k: build_steps.Done("done"))
-    build_state.save(run, BuildCursor(build_id="b1", step=1, finished=True))
     monkeypatch.setattr(build_chain, "RunState", lambda rid: _Run(run))
+    games.create_game("g1", "u1")
+    games.move("g1", "running", "building")
+    build_state.save(BuildCursor(build_id=games.create_build("g1"), step=1, finished=True))
 
-    build_chain.advance(str(run), {"choices": []})
+    build_chain.advance("g1", {"choices": []})
 
     assert [s["label"] for s in snapshots.list_snapshots(run)] == ["built"]
 
@@ -138,7 +140,6 @@ def test_a_playable_finalize_keeps_the_game(run, monkeypatch):
 def test_a_fix_keeps_the_game_before_it_edits(run, monkeypatch):
     """The version a fix is about to change is the one worth keeping."""
     monkeypatch.setattr(build_chain, "advance", lambda *a, **k: None)
-    monkeypatch.setattr(build_chain.games, "set_status", lambda *a, **k: None)
     monkeypatch.setattr(build_chain, "_emit", lambda *a, **k: None)
     monkeypatch.setattr(build_chain, "_seed", lambda rs: None)
     monkeypatch.setattr(build_chain, "RunState", lambda rid: _Run(run))

@@ -552,11 +552,22 @@ def test_stage_replaces_a_previous_stage(tmp_path, monkeypatch):
     assert not (stale / "gone.js").exists()
 
 
-def test_cursor_survives_a_reload(tmp_path):
+def test_the_cursor_is_the_latest_builds_own_row():
+    from db import games
     from maestro.codegen import build_state
-    build_state.save(tmp_path, _cursor(phase="audit", turn=7, compacted=2))
-    back = build_state.load(tmp_path)
-    assert (back.phase, back.turn, back.compacted) == ("audit", 7, 2)
+    games.create_game("g1", "u1")
+    first = games.create_build("g1")
+    build_state.save(BuildCursor(build_id=first, turn=7, compacted=2,
+                                 history=[{"role": "user", "content": "make a game"}]))
+    back = build_state.load("g1")
+    assert (back.build_id, back.kind, back.turn, back.compacted) == (first, "build", 7, 2)
+    assert back.history == [{"role": "user", "content": "make a game"}]
+    fix = games.create_build("g1", kind="fix")
+    assert build_state.load("g1") is None
+    build_state.save(BuildCursor(build_id=fix, kind="fix", turn=1))
+    assert (build_state.load("g1").build_id, build_state.load("g1").kind) == (fix, "fix")
+    games.create_build("g1", kind="assets")
+    assert build_state.load("g1").build_id == fix
 
 
 def test_seed_places_the_helper_library_and_leaves_edits_alone(tmp_path):

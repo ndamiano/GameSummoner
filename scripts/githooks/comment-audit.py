@@ -89,7 +89,7 @@ def docstring_spans(path, blob):
 
 def block_range(lines, lineno, rx):
     """1-indexed [start, end] of the contiguous whole-line comments around a line, or None."""
-    if rx is None or lineno > len(lines) or not rx.match(lines[lineno - 1]):
+    if rx is None or not 1 <= lineno <= len(lines) or not rx.match(lines[lineno - 1]):
         return None
     start = end = lineno
     while start > 1 and rx.match(lines[start - 2]):
@@ -145,7 +145,7 @@ def touched_prose():
             block = block_range(lines, n, pure)
             if block:
                 prose.update(range(block[0], block[1] + 1))
-            elif rx and n <= len(lines) and rx.search(lines[n - 1]):
+            elif rx and 1 <= n <= len(lines) and rx.search(lines[n - 1]):
                 prose.add(n)
         for n in sorted(prose):
             text = lines[n - 1] if n <= len(lines) else ""

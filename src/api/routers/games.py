@@ -1,11 +1,3 @@
-"""Games router — browse and drive codegen build runs.
-
-A "game" is a games row in the platform db plus its run dir under
-<working_directory>/runs/<run_id>/. The list reads the db only; the detail view reads the prompt
-from disk (source of truth) and derives live status from the durable build cursor.
-Build (which also stores the prompt it was given), pause/resume/stop, change-from-note, and asset
-skinning all live here.
-"""
 
 import asyncio
 import logging
@@ -89,6 +81,19 @@ def _require_state(run_id: str, user: User):
     return state
 
 
+def _shown(row: Dict) -> str:
+    status = row.get("status")
+    if status == "running" and row.get("stage") != "designing":
+        kind = (games.current_build(row["id"]) or {}).get("kind")
+        return {"fix": "fixing", "change": "changing"}.get(kind, "building")
+    return {"running": "building", "succeeded": "built"}.get(status, status)
+
+
+def _require_not_paused(run_id: str) -> None:
+    if (games.game(run_id) or {}).get("status") == "paused":
+        raise HTTPException(status_code=409, detail="this game is paused — resume it first")
+
+
 def _require_compute(run_id: str) -> None:
     """Refuse work a game can't pay for, BEFORE it occupies the build queue. Enqueue enforces the
     same budget per job, so this is the fast, legible failure rather than the safety net: without
@@ -113,18 +118,16 @@ async def list_games(user: User = Depends(get_current_user)):
     name the model gave it — falling back to the prompt-derived row title."""
     out: List[Dict] = []
     for row in games.list_games(user.id):
-        if not row["title"] and row["status"] == "draft":
+        if not row["title"]:
             continue   # created but has no prompt yet — nothing to show
-        active = build_chain.status_of(row["id"])
-        held = row["status"] == "held"
-        built = _built(row["id"]) and not held
+        built = _built(row["id"]) and row["status"] != "held"
         out.append({
             "run_id": row["id"],
             "title": staged_title(row["id"]) or row["title"],
-            "status": row["status"],
+            "status": _shown(row),
             "built": built,
-            "building": active is not None,
-            "paused": bool(active and active["paused"]),
+            "building": row["status"] == "running",
+            "paused": row["status"] == "paused",
             "mtime": row["updated_at"],
         })
     out.sort(key=lambda g: g["mtime"], reverse=True)
@@ -167,18 +170,7 @@ async def get_game(run_id: str, user: User = Depends(get_current_user)):
     state = _require_state(run_id, user)
     spec_data = state.read_spec()
     row = games.game(run_id) or {}
-    built = _built(run_id)
-    active = build_chain.status_of(run_id)
-    if active:
-        live = {"fix": "fixing", "change": "changing"}.get(active["kind"], "building")
-        status = "paused" if active["paused"] else live
-    elif row.get("status") == "held":
-        # A held game may still have an older staged copy on disk; held wins so nothing offers it.
-        status, built = "held", False
-    elif row.get("status") == "failed":
-        status = "failed"
-    else:
-        status = "built" if built else "idle"
+    built = _built(run_id) and row.get("status") != "held"
     return {
         "run_id": run_id,
         "ask": spec_data.get("ask", ""),
@@ -186,8 +178,8 @@ async def get_game(run_id: str, user: User = Depends(get_current_user)):
         "prompt": spec_data.get("request"),
         "title": staged_title(run_id) or spec_data.get("title", ""),
         "built": built,
-        "building": active is not None,
-        "status": status,
+        "building": row.get("status") == "running",
+        "status": _shown(row),
         "assets_exist": (game_dir(state.run_dir) / "assets.json").exists(),
         # Whether a previous attempt left files behind — what the from-scratch build would discard.
         "has_game": has_authored_files(state.run_dir),
@@ -207,8 +199,6 @@ async def play_session(run_id: str, user: User = Depends(get_current_user)):
     parent page must verify reporter postMessages against ('' ⇒ games share the app origin)."""
     _require_state(run_id, user)
     _require_not_held(run_id)
-    if (games.game(run_id) or {}).get("status") == "revoked":
-        raise HTTPException(status_code=410, detail="this game was refunded and revoked")
     if not _built(run_id):
         raise HTTPException(status_code=409, detail="not built yet")
     # An evicted game is a download away from playable — pull it back before minting a session.
@@ -224,8 +214,6 @@ async def play_session(run_id: str, user: User = Depends(get_current_user)):
 async def share_game(run_id: str, user: User = Depends(get_current_user)):
     _require_state(run_id, user)
     _require_not_held(run_id)
-    if (games.game(run_id) or {}).get("status") == "revoked":
-        raise HTTPException(status_code=410, detail="this game was refunded and revoked")
     if not _built(run_id):
         raise HTTPException(status_code=409, detail="not built yet")
     await asyncio.to_thread(archive.ensure_local, run_id)
@@ -308,6 +296,7 @@ async def regenerate_game_asset(run_id: str, asset_id: str, body: RegenerateBody
     if not note:
         raise HTTPException(status_code=400, detail="a prompt is required")
     _require_not_held(run_id)
+    _require_not_paused(run_id)
     violation = screen_text(note)
     if violation is not None:
         log_violation(violation, user_id=user.id, source="regenerate_note", run_id=run_id)
@@ -346,7 +335,7 @@ async def build_game(run_id: str, body: BuildBody = BuildBody(),
     no automatic refund."""
     state = _require_state(run_id, user)
     _require_not_held(run_id)
-    if build_chain.is_active(run_id):
+    if build_chain.is_running(run_id):
         raise HTTPException(status_code=409, detail="build already in progress")
     # A build or change on an evicted run must open on its real files, not an empty seed.
     await asyncio.to_thread(archive.ensure_local, run_id)
@@ -371,46 +360,30 @@ async def build_game(run_id: str, body: BuildBody = BuildBody(),
     _require_compute(run_id)
 
     # kickoff seeds the game folder before enqueueing the first llm turn, so it touches disk.
-    await asyncio.to_thread(build_chain.kickoff, run_id, kind="build", fresh=body.fresh)
+    if await asyncio.to_thread(build_chain.kickoff, run_id, kind="build", fresh=body.fresh) is None:
+        raise HTTPException(status_code=409, detail="build already in progress")
     return {"status": "building", "run_id": run_id}
 
 
 @router.post("/{run_id}/pause", response_model=Dict)
 async def pause_game(run_id: str, user: User = Depends(get_current_user)):
-    """Pause a running build — its queued turn is cancelled, and one already claimed lands and is
-    kept before the build parks."""
     _require_state(run_id, user)
     if not await asyncio.to_thread(build_chain.pause, run_id):
-        raise HTTPException(status_code=409, detail="no build in progress for this run")
-    return {"run_id": run_id, "status": "pausing"}
-
-
-@router.post("/{run_id}/stop", response_model=Dict)
-async def stop_game(run_id: str, user: User = Depends(get_current_user)):
-    """Stop the run for good at whatever stage it is in, keeping whatever it has written. Every
-    job it owns on every queue is cancelled, a design included. A run that never wrote an
-    index.html ends `failed`; one that did is playable and ends `built`, exactly as a step-capped
-    build does. 409 only when the run has nothing in flight at all."""
-    _require_state(run_id, user)
-    if not await asyncio.to_thread(build_chain.stop, run_id):
-        raise HTTPException(status_code=409, detail="nothing in flight for this run")
-    return {"run_id": run_id, "status": "stopped"}
+        raise HTTPException(status_code=409, detail="nothing is running for this run")
+    return {"run_id": run_id, "status": "paused"}
 
 
 @router.post("/{run_id}/resume", response_model=Dict)
 async def resume_game(run_id: str, user: User = Depends(get_current_user)):
-    """Resume a build. A mid-flight cursor (paused, or one whose driver died — container restart,
-    redeploy) is re-driven in place from durable on-disk state, so it rebuilds where it left off.
-    The run is already `charged`, so re-enqueue never re-charges."""
     _require_state(run_id, user)
+    _require_not_held(run_id)
     _require_compute(run_id)
-    if build_chain.is_active(run_id):
-        await asyncio.to_thread(build_chain.resume, run_id)
+    if await asyncio.to_thread(build_chain.resume, run_id):
         return {"run_id": run_id, "status": "building"}
     if not games.is_charged(run_id):
         raise HTTPException(status_code=409, detail="no build to resume for this run")
-    # A finished/failed build has no cursor to re-drive: start a fresh one over the on-disk game.
-    await asyncio.to_thread(build_chain.kickoff, run_id, kind="build")
+    if await asyncio.to_thread(build_chain.kickoff, run_id, kind="build") is None:
+        raise HTTPException(status_code=409, detail="build already in progress")
     return {"status": "building", "run_id": run_id}
 
 
@@ -426,10 +399,13 @@ async def change_game(run_id: str, body: ChangeBody, user: User = Depends(get_cu
         log_violation(violation, user_id=user.id, source="change_note", run_id=run_id)
         raise HTTPException(status_code=400, detail="this note can't be applied")
     _require_compute(run_id)
-    if build_chain.is_active(run_id):
-        raise HTTPException(status_code=409, detail="a build or change is already running for this run")
+    busy = HTTPException(status_code=409,
+                         detail="a build or change is already running for this run")
+    if build_chain.is_running(run_id):
+        raise busy
     await asyncio.to_thread(archive.ensure_local, run_id)
-    await asyncio.to_thread(build_chain.kickoff, run_id, kind="change", note=body.note)
+    if await asyncio.to_thread(build_chain.kickoff, run_id, kind="change", note=body.note) is None:
+        raise busy
     return {"status": "changing", "run_id": run_id}
 
 
@@ -438,6 +414,8 @@ async def skin_assets(run_id: str, user: User = Depends(get_current_user)):
     """Render the art the game declared in assets.json, on a background thread. Emits
     assets_started / assets_done over the websocket."""
     _require_state(run_id, user)
+    _require_not_held(run_id)
+    _require_not_paused(run_id)
     _require_compute(run_id)
     key = f"assets:{run_id}"
     # Two guards, because the stage outlives its thread: the key covers the plan-and-enqueue

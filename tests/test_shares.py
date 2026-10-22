@@ -119,7 +119,7 @@ def test_unsharing_or_a_hold_takes_the_link_down(client, cleanup, no_thumbs):
 
     sid = client.post(f"/api/games/{run_id}/share", headers=auth).json()["share_id"]
     from db import games
-    games.set_status(run_id, "held")
+    games.move(run_id, "held")
     assert client.post(f"/api/games/{run_id}/share", headers=auth).status_code == 423
     shares.unshare(run_id)
     assert client.get(f"/api/shares/{sid}").status_code == 404

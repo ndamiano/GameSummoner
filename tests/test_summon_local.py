@@ -7,6 +7,10 @@ spec = importlib.util.spec_from_file_location("summon_local", ROOT / "scripts" /
 summon_local = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(summon_local)
 
+from db import games
+from maestro.codegen import build_state
+from maestro.codegen.build_state import BuildCursor
+
 
 def _turn(name, args, reasoning=""):
     return {"kind": "turn", "response": {"reasoning_content": reasoning, "tool_calls": [
@@ -42,7 +46,8 @@ def test_detail_replays_the_turn_log_into_a_collapsed_feed_with_step_and_design(
     turns = [_turn("python", {"code": "play()"}), _turn("python", {"code": "play()"}),
              _turn("write_file", {"path": "src/a.js", "content": ""}, "Fix the spawn.")]
     (run / "turns.jsonl").write_text("".join(json.dumps(t) + "\n" for t in turns))
-    (run / "build_state.json").write_text(json.dumps({"step": 40, "max_steps": 200}))
+    games.create_game("r1", "u1")
+    build_state.save(BuildCursor(build_id=games.create_build("r1"), step=40, max_steps=200))
     (run / "design.md").write_text("| Dimension: 2D | §3 |\n")
     backend = object.__new__(summon_local.LocalBackend)
     backend.runs, backend._turns, backend._designs = tmp_path, {}, {}

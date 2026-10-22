@@ -158,9 +158,11 @@ def _restage(run_id: str) -> None:
     build still running stages its own game at finalize, and re-staging under it would publish a
     half-written game."""
     from db import games
-    from maestro.codegen.staging import stage_for_play
+    from maestro.codegen.staging import is_staged, stage_for_play
     from maestro.state import RunState
-    if (games.game(run_id) or {}).get("status") == "built":
+    game = games.game(run_id) or {}
+    building = game.get("status") == "running" and game.get("stage") == "building"
+    if not building and game.get("status") != "held" and is_staged(run_id):
         stage_for_play(RunState(run_id).run_dir, run_id)
 
 

@@ -8,7 +8,7 @@ export interface Game {
 }
 
 // 'held': the safety screen held the build for human review — frozen and shown as unavailable.
-export type GameStatus = 'idle' | 'queued' | 'building' | 'fixing' | 'changing' | 'paused' | 'built' | 'held' | 'failed' | 'stopped'
+export type GameStatus = 'idle' | 'building' | 'fixing' | 'changing' | 'paused' | 'built' | 'held' | 'failed'
 
 export interface GameDetail {
     run_id: string

@@ -1,34 +1,20 @@
-"""The durable build cursor — everything the driver would otherwise hold in memory, on disk.
-
-Each LLM turn is a job on the `llm` queue; the process that started the turn dies, and the job's
-completion (`/worker/complete` → build_chain) drives the NEXT turn. So the loop's live state — the
-step count, the growing transcript, the read→edit grounding — must survive process death. It lives
-in `runs/<id>/build_state.json`, the same run dir that owns the spec and the game folder. Job
-metadata carries only `{stage, run_id, build_id}`; this file is the single source of truth the
-completion reloads, advances, and rewrites.
-"""
-
 from __future__ import annotations
 
 import json
-import os
-import uuid
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
 from typing import Dict, List, Optional
 
-_STATE_FILE = "build_state.json"
+from db import games
+
 DEFAULT_MAX_STEPS = 200
 
 
 @dataclass
 class BuildCursor:
     build_id: str
-    kind: str = "build"                           # "build" | "fix" | "change"
-    phase: str = "build"                          # "build" | "checking" (a gate is running) | "done"
+    kind: str = "build"
     step: int = 0
     max_steps: int = DEFAULT_MAX_STEPS
-    paused: bool = False
     t0: float = 0.0
     ok: Optional[bool] = None
     request: str = ""                             # overrides the spec-rendered request (a gate fix or a change note)
@@ -59,24 +45,14 @@ class BuildCursor:
     meta_logged: bool = False
 
 
-def _path(run_dir: Path) -> Path:
-    return Path(run_dir) / _STATE_FILE
-
-
-def load(run_dir) -> Optional[BuildCursor]:
-    p = _path(run_dir)
-    if not p.exists():
+def load(game_id: str) -> Optional[BuildCursor]:
+    build = games.current_build(game_id)
+    if build is None or build["cursor"] is None:
         return None
-    return BuildCursor(**json.loads(p.read_text(encoding="utf-8")))
+    return BuildCursor(build_id=build["id"], kind=build["kind"], **json.loads(build["cursor"]))
 
 
-def save(run_dir, cursor: BuildCursor) -> None:
-    # Atomic like RunState._write: a torn build_state.json would strand a build unrecoverably.
-    p = _path(run_dir)
-    tmp = p.parent / f".{_STATE_FILE}.{uuid.uuid4().hex}.tmp"
-    tmp.write_text(json.dumps(asdict(cursor), indent=2, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, p)
-
-
-def clear(run_dir) -> None:
-    _path(run_dir).unlink(missing_ok=True)
+def save(cursor: BuildCursor) -> None:
+    state = asdict(cursor)
+    del state["build_id"], state["kind"]
+    games.save_cursor(cursor.build_id, json.dumps(state, ensure_ascii=False))

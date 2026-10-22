@@ -29,7 +29,7 @@ from maestro.codegen.assets import (
     set_landed,
     set_refused,
 )
-from maestro.codegen.staging import stage_for_play
+from maestro.codegen.staging import is_staged, stage_for_play
 from maestro.state import RunState
 from tools.build_events import _emit
 from tools.quilting import quilt_tile
@@ -168,11 +168,12 @@ def _finalize_landing(md: Dict, jobs: List[Dict]):
             rendered.append(aid)
 
     # A batch enqueued mid-build must not stage the game out from under the build's own finalize.
-    status = (games.game(run_id) or {}).get("status")
-    if status == "built":
+    game = games.game(run_id) or {}
+    building = game.get("status") == "running" and game.get("stage") == "building"
+    if not building and game.get("status") != "held" and is_staged(run_id):
         stage_for_play(state.run_dir, run_id)
 
-    ok = status in ("built", "building")
+    ok = game.get("status") != "held"
     logger.info("assets %s: rendered %d/%d asset(s)", run_id, len(rendered), len(ids))
     build_id = next((j["build_id"] for j in jobs if j["build_id"]), None)
     _emit("assets_done", run_id, build_id=build_id, ok=ok, rendered=sorted(rendered))

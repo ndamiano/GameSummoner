@@ -81,9 +81,11 @@ def test_runtime_note_uses_stack_and_skips_parse_sentence(tmp_path):
 class _Kickoffs:
     def __init__(self):
         self.calls = []
+        self.refuse = False
 
-    def __call__(self, run_id, *, kind, note):
-        self.calls.append({"run_id": run_id, "kind": kind, "note": note})
+    def __call__(self, run_id, *, kind, note, after):
+        self.calls.append({"run_id": run_id, "kind": kind, "note": note, "after": after})
+        return None if self.refuse else "f1"
 
 
 @pytest.fixture
@@ -113,6 +115,7 @@ def test_thrown_error_enters_fix_machine_with_one_note(wired, monkeypatch):
         {"message": "TypeError: also broken", "stack": ""}])
     error_gate.after_build("r1", "b1")
     assert len(kickoffs.calls) == 1
+    assert (kickoffs.calls[0]["kind"], kickoffs.calls[0]["after"]) == ("fix", "b1")
     assert "Game is not defined" in kickoffs.calls[0]["note"]
     assert "also broken" not in kickoffs.calls[0]["note"]
     assert json.loads((run_dir / "error_gate.json").read_text())["rounds"] == 1
@@ -123,6 +126,14 @@ def test_clean_probe_kicks_nothing(wired, monkeypatch):
     monkeypatch.setattr(error_gate, "probe", lambda g: [])
     error_gate.after_build("r1", "b1")
     assert kickoffs.calls == []
+
+
+def test_a_fix_the_game_refuses_is_not_reported_as_started(wired, monkeypatch):
+    run_dir, gdir, kickoffs = wired
+    kickoffs.refuse = True
+    monkeypatch.setattr(error_gate, "probe", lambda g: [{"message": "TypeError: x", "stack": ""}])
+    assert error_gate.after_build("r1", "b1") is False
+    assert len(kickoffs.calls) == 1
 
 
 def test_same_error_twice_running_stops(wired, monkeypatch):

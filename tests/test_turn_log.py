@@ -30,6 +30,7 @@ def run(tmp_path, monkeypatch):
     run_id = create_run(user.id)
     RunState(run_id).write_spec({"request": "make a game", "title": "Moon Miner"})
     games.charge_game(run_id, 1, 1_000_000)
+    games.move(run_id, "paused", "building")
     workers.worker_created("w1", None, "llm", None, 0.99)
     return run_id
 
@@ -130,7 +131,7 @@ def test_the_meta_record_is_written_once_per_build(run):
         _land(run, build_id, _reply([_write("index.html")]))
 
     assert [r["kind"] for r in _log(run)].count("meta") == 1
-    assert build_state.load(RunState(run).run_dir).meta_logged is True
+    assert build_state.load(run).meta_logged is True
 
 
 def test_a_fix_appends_its_own_build_and_keeps_the_first(run):
@@ -138,6 +139,7 @@ def test_a_fix_appends_its_own_build_and_keeps_the_first(run):
     gets its own meta — and truncating the file would throw away the build being fixed."""
     build_id = build_chain.kickoff(run)
     _land(run, build_id, _reply([_write("index.html")]))
+    assert build_chain.pause(run)
     fix_id = build_chain.kickoff(run, kind="fix", note="the ship never moves")
     fix_job = _land(run, fix_id, _reply([_write("game.js")]))
 
@@ -156,5 +158,5 @@ def test_the_cli_build_carries_the_default_step_cap(run):
     from maestro.codegen import run as cli
     cap = inspect.signature(cli.run_build).parameters["max_steps"].default
     build_chain.kickoff(run, kind="build", max_steps=cap)
-    cursor = build_state.load(RunState(run).run_dir)
+    cursor = build_state.load(run)
     assert cursor.max_steps == build_state.DEFAULT_MAX_STEPS

@@ -123,9 +123,10 @@ def _fallback(run_id: str, build_id: Optional[str], ask: str, why: str) -> None:
 def _start_build(run_id: str) -> None:
     from maestro.codegen import build_chain
     try:
-        build_chain.kickoff(run_id, kind="build")
+        build_chain.kickoff(run_id, kind="build", designed=True)
     except Exception:
         logger.exception("build for %s could not start after its design landed", run_id)
+        games.move(run_id, "failed", when_status=("running",))
 
 
 def _enqueue_step(run_id: str, build_id: str, ask: str, step: str, spec_so_far: str = "") -> None:
@@ -140,14 +141,17 @@ def _enqueue_step(run_id: str, build_id: str, ask: str, step: str, spec_so_far: 
 
 
 def enqueue(run_id: str, ask: str) -> None:
+    games.move(run_id, "running", "designing")
+    d = _design_dir(run_id)
+    for leftover in [*d.glob(".retried-*"), d / ".rounds", d / "spec.md"]:
+        leftover.unlink(missing_ok=True)
     build_id = games.create_build(run_id, kind="design")
     games.build_started(build_id)
     try:
         _enqueue_step(run_id, build_id, ask, "decide")
     except Exception:
         logger.exception("design for %s could not be enqueued", run_id)
-        games.build_finished(build_id, "failed")
-        _land(run_id, ask)
+        _fallback(run_id, build_id, ask, "decide refused")
 
 
 def _retry(run_id: str, step: str) -> bool:
@@ -163,6 +167,12 @@ def _retry(run_id: str, step: str) -> bool:
 def on_complete(run_id: str, build_id: Optional[str], result: Optional[Dict],
                 error: Optional[str], step: str) -> None:
     from maestro.state import RunState
+    game = games.game(run_id) or {}
+    if game.get("status") != "running" or game.get("stage") != "designing":
+        logger.info("design for %s: a %s landed after the game moved on", run_id, step)
+        if build_id:
+            games.build_finished(build_id, "stopped")
+        return
     ask = (RunState(run_id).read_spec() or {}).get("ask", "")
     d = _design_dir(run_id)
     if step == "decide":

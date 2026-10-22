@@ -186,8 +186,12 @@ def _run(tmp_path, monkeypatch, reports, state=None):
     monkeypatch.setattr(maestro.state, "RunState", _RS)
     monkeypatch.setattr(staging, "game_dir", lambda rd: rd / "game")
     monkeypatch.setattr(ec, "run_scope", lambda rid, bid: __import__("contextlib").nullcontext())
-    monkeypatch.setattr(build_chain, "kickoff",
-                        lambda run_id, **kw: kicked.append(kw.get("note")))
+    def kickoff(run_id, *, kind, note, after):
+        assert (kind, after) == ("fix", "b1")
+        kicked.append(note)
+        return "f1"
+
+    monkeypatch.setattr(build_chain, "kickoff", kickoff)
     monkeypatch.setattr(play_gate, "play", lambda gdir, req: reports.pop(0))
     started = play_gate.after_build("r1", "b1")
     return started, kicked, run_dir

@@ -54,8 +54,10 @@ export const GameCard: React.FC<{ game: Game; onOpen: () => void }> = ({ game, o
                 <span className="text-sm font-semibold leading-snug line-clamp-2">{title}</span>
                 {game.status === 'held'
                     ? <Pill label="unavailable" tone="idle" />
-                    : game.building
-                        ? <Pill label={game.paused ? 'paused' : 'summoning'} tone={game.paused ? 'idle' : 'wait'} />
+                    : game.paused
+                        ? <Pill label="paused" tone="idle" />
+                        : game.building
+                        ? <Pill label="summoning" tone="wait" />
                         : game.built
                             ? <Pill label="built" tone="live" />
                             : <Pill label="not built" tone="idle" />}

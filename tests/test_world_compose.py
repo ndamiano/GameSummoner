@@ -180,7 +180,8 @@ def test_the_run_scope_reaches_the_thread(run, pipeline):
 def test_a_later_leg_republishes_and_restages(run, pipeline, monkeypatch):
     """A mesh that lands after the build finished has to reach the copy people play."""
     staged = []
-    monkeypatch.setattr(games, "game", lambda run_id: {"status": "built"})
+    monkeypatch.setattr(games, "game", lambda run_id: {"status": "succeeded", "stage": "checking"})
+    monkeypatch.setattr("maestro.codegen.staging.is_staged", lambda slug: True)
     monkeypatch.setattr("maestro.codegen.staging.stage_for_play",
                         lambda run_dir, slug: staged.append(slug))
     _compose(run, pipeline)

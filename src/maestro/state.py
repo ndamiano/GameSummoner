@@ -1,18 +1,3 @@
-"""Durable on-disk state for one game build.
-
-Each game gets its own run directory under <working_directory>/runs/<run_id>/.
-Inside it:
-  - spec.json             the run's ASK and PROMPT ({ask, request, title}) — `request` is what
-                          the build sends as its user message
-  - build_state.json      the durable build cursor (maestro.codegen.build_state)
-  - turns.jsonl           every llm turn the run has spent (maestro.codegen.turn_log) — the
-                          archive, once the jobs row that carried it is emptied
-  - game/                 the browser files the model wrote — written directly by
-                          maestro.codegen.tools
-  - game.git/             that folder's history (maestro.codegen.snapshots) — the repo sits beside
-                          the work tree so nothing shows up inside game/
-"""
-
 import json
 import os
 import uuid

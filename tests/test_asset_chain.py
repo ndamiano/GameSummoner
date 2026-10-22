@@ -189,6 +189,7 @@ def _asset_env(monkeypatch, tmp_path, tmp_runs):
                         lambda et, rid, **f: events.append((et, f)))
     monkeypatch.setattr(asset_chain, "RunState",
                         lambda rid: type("S", (), {"run_dir": tmp_path})())
+    monkeypatch.setattr(asset_chain, "is_staged", lambda rid: True)
     return asset_chain, staged, events
 
 
@@ -196,35 +197,24 @@ def _md():
     return {"run_id": "g1", "then": {"finalize": "assets"}}
 
 
-def test_early_finalize_mid_build_defers_staging(_asset_env):
-    """A batch lands while the build is still running: renders are on disk, but staging is the
-    build finalize's job — and the outcome is a success, not a failure."""
+@pytest.mark.parametrize("stage, status, published, restaged, ok", [
+    ("building", "running", True, False, True),
+    ("checking", "running", True, True, True),
+    ("checking", "succeeded", True, True, True),
+    ("building", "failed", True, True, True),
+    ("building", "paused", True, True, True),
+    ("checking", "succeeded", False, False, True),
+    ("building", "held", True, False, False),
+])
+def test_landed_art_reaches_the_published_game_unless_a_build_is_writing_it_or_it_is_held(
+        _asset_env, monkeypatch, stage, status, published, restaged, ok):
     asset_chain, staged, events = _asset_env
+    monkeypatch.setattr(asset_chain, "is_staged", lambda rid: published)
     _game()
-    games.set_status("g1", "building")
+    games.move("g1", status, stage)
     asset_chain._finalize_assets(_md(), [{"metadata": {}, "build_id": None}])
-    assert staged == []
-    assert events == [("assets_done", {"build_id": None, "ok": True, "rendered": []})]
-
-
-def test_finalize_after_a_built_game_stages(_asset_env):
-    """The batch outlives the build: the game is BUILT by the time the last render lands, so the
-    finalize must stage, or the art never reaches /play."""
-    asset_chain, staged, events = _asset_env
-    _game()
-    games.set_status("g1", "built")
-    asset_chain._finalize_assets(_md(), [{"metadata": {}, "build_id": None}])
-    assert staged == ["g1"]
-    assert events[0][1]["ok"] is True
-
-
-def test_finalize_on_a_failed_build_neither_stages_nor_claims_ok(_asset_env):
-    asset_chain, staged, events = _asset_env
-    _game()
-    games.set_status("g1", "failed")
-    asset_chain._finalize_assets(_md(), [{"metadata": {}, "build_id": None}])
-    assert staged == []
-    assert events[0][1]["ok"] is False
+    assert staged == (["g1"] if restaged else [])
+    assert events == [("assets_done", {"build_id": None, "ok": ok, "rendered": []})]
 
 
 def test_a_build_turns_art_lands_without_ending_the_build(_asset_env):
@@ -234,7 +224,7 @@ def test_a_build_turns_art_lands_without_ending_the_build(_asset_env):
     _game()
     bid = games.create_build("g1", kind="build")
     games.build_started(bid)
-    games.set_status("g1", "building")
+    games.move("g1", "running", "building")
     asset_chain.FINALIZERS["assets"](_md(), [{"metadata": {}, "build_id": bid}])
     (b,) = games.builds_for("g1")
     assert b["status"] == "running" and b["finished_at"] is None
@@ -246,7 +236,7 @@ def test_a_standalone_art_batch_is_its_own_build_and_ends_it(_asset_env):
     _game()
     bid = games.create_build("g1", kind="assets")
     games.build_started(bid)
-    games.set_status("g1", "built")
+    games.move("g1", "succeeded", "checking")
     asset_chain.FINALIZERS["art_build"](_md(), [{"metadata": {}, "build_id": bid}])
     (b,) = games.builds_for("g1")
     assert b["status"] == "succeeded" and b["finished_at"] is not None
@@ -403,7 +393,7 @@ def test_finalize_reports_an_image_asset_as_rendered(_asset_env):
     from maestro.codegen.assets import asset_path, ext_for
     asset_chain, staged, events = _asset_env
     _game()
-    games.set_status("g1", "building")
+    games.move("g1", "running", "building")
     asset_path("g1", "goblin", ext_for("sprite")).write_bytes(b"webp")
     asset_chain._finalize_assets(
         _md(), [{"metadata": {"asset_id": "goblin", "kind": "sprite"}, "build_id": None}])

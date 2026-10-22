@@ -10,5 +10,9 @@ class InsufficientCompute(Exception):
         self.needed = needed
 
 
+class GamePaused(Exception):
+    pass
+
+
 class BuildEnded(Exception):
     pass

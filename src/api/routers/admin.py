@@ -287,13 +287,12 @@ async def get_costs(days: int = 7, _: User = Depends(require_admin)) -> Dict[str
     return data
 
 
-@router.post("/games/{run_id}/stop")
-async def stop_any_game(run_id: str, admin: User = Depends(require_admin)) -> Dict[str, Any]:
-    """Stop any run, no matter what."""
+@router.post("/games/{run_id}/pause")
+async def pause_any_game(run_id: str, admin: User = Depends(require_admin)) -> Dict[str, Any]:
     owner = games.owner_of(run_id)
     if owner is None:
         raise HTTPException(status_code=404, detail=f"no game {run_id!r}")
-    logger.warning("admin %s stopping run %s owned by %s", admin.id, run_id, owner)
-    if not await asyncio.to_thread(build_chain.stop, run_id):
-        raise HTTPException(status_code=409, detail="nothing in flight for this run")
-    return {"run_id": run_id, "status": "stopped", "owner": owner}
+    logger.warning("admin %s pausing run %s owned by %s", admin.id, run_id, owner)
+    if not await asyncio.to_thread(build_chain.pause, run_id):
+        raise HTTPException(status_code=409, detail="nothing is running for this run")
+    return {"run_id": run_id, "status": "paused", "owner": owner}

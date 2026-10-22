@@ -145,10 +145,10 @@ def test_a_blocked_fix_note_is_refused_and_recorded(client, owned_game):
 
 
 def test_a_held_game_is_frozen(client, owned_game):
-    """Held ⇒ no play, no build, no fix — and the detail reports the neutral status."""
     run_id, headers = owned_game
-    games.set_status(run_id, "held")
-    for path, body in [("play-session", {}), ("build", {}), ("change", {"note": "make it fun"})]:
+    games.move(run_id, "held")
+    for path, body in [("play-session", {}), ("build", {}), ("change", {"note": "make it fun"}),
+                       ("resume", {}), ("assets", {})]:
         r = client.post(f"/api/games/{run_id}/{path}", headers=headers, json=body)
         assert r.status_code == 423, path
     detail = client.get(f"/api/games/{run_id}", headers=headers).json()

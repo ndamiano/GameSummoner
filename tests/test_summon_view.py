@@ -24,23 +24,23 @@ def test_the_list_holds_every_built_game_newest_first_and_keeps_a_typed_request_
     screen.add(typed)
     old_builds = [_build("design", "succeeded", 100, 100, 150), _build("build", "succeeded", 150, 150, 900),
                   _build("fix", "succeeded", 900, 900, 1200)]
-    rows = [_row("new", "building", 300.0, builds=[_build("design", "running", 300, 300)]),
-            _row("old", "built", 100.0, builds=old_builds, title="GLOOP RANGER")]
+    rows = [_row("new", "running", 300.0, builds=[_build("design", "running", 300, 300)]),
+            _row("old", "succeeded", 100.0, builds=old_builds, title="GLOOP RANGER")]
     screen.merge(rows)
     assert [g.run_id for g in screen.games] == [None, "new", "old"]
     assert screen.picked is typed
     typed.run_id = "cat"
-    screen.merge([_row("cat", "building", typed.created, "a wizard cat")] + rows)
+    screen.merge([_row("cat", "running", typed.created, "a wizard cat")] + rows)
     assert [g.run_id for g in screen.games] == ["cat", "new", "old"] and screen.games[0] is typed
     old = screen.games[2]
     assert (old.active, old.stage, old.finished_at, old.name) == (False, "test", 1200, "GLOOP RANGER")
-    screen.merge([_row("cat", "building", typed.created, live=False)] + rows)
+    screen.merge([_row("cat", "running", typed.created, live=False)] + rows)
     assert not typed.active and "stalled" in screen._brief(typed)
 
 
-def test_the_input_summons_on_the_top_row_changes_a_game_and_asks_before_stopping_a_build():
+def test_the_input_summons_on_the_top_row_changes_a_game_and_asks_before_pausing_a_build():
     screen = summon_view.Screen()
-    screen.merge([_row("live", "building", 200.0), _row("old", "built", 100.0)])
+    screen.merge([_row("live", "running", 200.0), _row("old", "succeeded", 100.0)])
     live, old = screen.games
     assert screen.picked is None
     assert screen.key("a wizard catX\x7f") is None and screen.typed == "a wizard cat"
@@ -49,7 +49,7 @@ def test_the_input_summons_on_the_top_row_changes_a_game_and_asks_before_stoppin
     assert screen.key("\x1b[A") is None and screen.picked is live
     assert screen.key("faster frogs\r") is None and screen.confirm == (live, "faster frogs")
     assert screen.key("n") is None and screen.confirm is None and screen.typed == "faster frogs"
-    assert screen.key("\ry") == ("stop_change", live, "faster frogs") and screen.typed == ""
+    assert screen.key("\ry") == ("pause_change", live, "faster frogs") and screen.typed == ""
     assert screen.key("\x1b[A\x1b[A") is None and screen.picked is None
     assert screen.key("\r") == ("summon", "a wizard cat") and screen.typed == ""
     assert screen.key("   \r") is None
@@ -59,7 +59,7 @@ def test_every_screen_line_fits_the_terminal_and_the_status_line_counts_live_gam
     monkeypatch.setattr(summon_view.shutil, "get_terminal_size", lambda *_: type("S", (), {"columns": 80})())
     screen = summon_view.Screen()
     long = "a roguelike about a wizard cat climbing a tower " * 3
-    screen.merge([_row(str(i), "building" if i < 2 else "built", 100.0 - i, long,
+    screen.merge([_row(str(i), "running" if i < 2 else "succeeded", 100.0 - i, long,
                        [_build("design", "succeeded", 1, 1, 2),
                         _build("build", "running" if i < 2 else "succeeded", 2, 2, 3)]) for i in range(12)])
     screen.queues = {"llm": (2, 0), "comfy": (0, 3)}
@@ -72,7 +72,7 @@ def test_every_screen_line_fits_the_terminal_and_the_status_line_counts_live_gam
 
 def test_the_screen_keeps_one_height_so_the_input_line_never_moves():
     screen = summon_view.Screen()
-    screen.merge([_row("a", "built", 2.0, builds=[_build("design", "succeeded", 1, 1, 2)]),
+    screen.merge([_row("a", "succeeded", 2.0, builds=[_build("design", "succeeded", 1, 1, 2)]),
                   _row("b", "failed", 1.0)])
     screen.games[0].apply({"step": 3, "max_steps": 200, "design_note": "9 words",
                            "feed": [["wrote a.js", 1]] * 5, "thought": "hm"})

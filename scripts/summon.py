@@ -58,7 +58,7 @@ class Session:
             self.screen.add(game)
             self._spawn(self._summon, game)
         else:
-            self._spawn(self._change, action[1], action[2], action[0] == "stop_change")
+            self._spawn(self._change, action[1], action[2], action[0] == "pause_change")
 
     def _spawn(self, fn, *args) -> None:
         threading.Thread(target=fn, args=args, daemon=True).start()
@@ -69,9 +69,9 @@ class Session:
         if not self.backend.summon(game.request, started):
             game.failed = f"never started, see {LOGS / 'build.log'}"
 
-    def _change(self, game: Game, note: str, stop: bool) -> None:
-        if stop:
-            self.backend.stop(game.run_id)
+    def _change(self, game: Game, note: str, pause: bool) -> None:
+        if pause:
+            self.backend.pause(game.run_id)
         self.backend.change(game.run_id, note)
 
     def sync(self) -> None:

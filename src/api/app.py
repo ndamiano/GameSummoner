@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -21,6 +22,7 @@ async def _lifespan(app: FastAPI):
     app.state.reaper = Reaper()
     app.state.reaper.start()
     logging.info("Queue reaper started")
+    await asyncio.to_thread(build_chain.recover)
 
     app.state.db_backup = DbBackup()
     app.state.db_backup.start()
@@ -82,6 +84,7 @@ from api.websocket.event_bus import event_bus
 from auth.deps import install_auth
 from auth.router import router as auth_router
 from config.settings_manager import settings_manager
+from maestro.codegen import build_chain
 from workqueue.reaper import Reaper
 from tools.db_backup import DbBackup
 from scaler.autoscaler import Autoscaler

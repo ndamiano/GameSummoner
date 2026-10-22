@@ -75,10 +75,8 @@ def bucket(tmp_path, monkeypatch):
 
     import maestro.state
     import maestro.codegen.staging as staging
-    import maestro.codegen.build_chain as build_chain
     monkeypatch.setattr(maestro.state, "RunState", FakeRS)
     monkeypatch.setattr(staging, "RUNTIME_DIR", tmp_path / "runtime")
-    monkeypatch.setattr(build_chain, "is_active", lambda rid: False)
     return fake, runs, runtime_games
 
 
@@ -142,13 +140,17 @@ def test_evict_refuses_when_upload_cannot_verify(bucket, monkeypatch):
     assert (run_dir / "game").exists()
 
 
-def test_evict_refuses_an_active_build(bucket, monkeypatch):
+def test_evict_refuses_a_running_game_and_takes_a_paused_one(bucket):
+    from db import games
     fake, runs, _ = bucket
     _make_run(runs)
-    import maestro.codegen.build_chain as build_chain
-    monkeypatch.setattr(build_chain, "is_active", lambda rid: True)
+    games.create_game("r1", "u1")
     with pytest.raises(RuntimeError, match="in flight"):
         archive.evict("r1")
+    assert (runs / "r1" / "game").exists()
+    games.move("r1", "paused", "building")
+    archive.evict("r1")
+    assert not (runs / "r1" / "game").exists()
 
 
 def test_rehydrate_round_trips_and_restages(bucket):

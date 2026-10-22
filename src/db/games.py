@@ -2,7 +2,7 @@
 
 import time
 import uuid
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 from billing.estimates import QUEUE_MICRO_ESTIMATES
 from db.connection import platform_db, row_dict
@@ -13,7 +13,8 @@ def create_game(game_id: str, user_id: str) -> None:
     now = time.time()
     with platform_db() as conn:
         conn.execute(
-            "INSERT INTO games (id, user_id, created_at, updated_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO games (id, user_id, stage, status, created_at, updated_at) "
+            "VALUES (?, ?, 'designing', 'running', ?, ?)",
             (game_id, user_id, now, now),
         )
 
@@ -38,18 +39,33 @@ def list_games(user_id: str) -> List[Dict]:
 
 
 def update_prompt_meta(game_id: str, title: str) -> None:
-    """Mirror the prompt's title onto the game row and mark the run buildable."""
     with platform_db() as conn:
-        conn.execute(
-            "UPDATE games SET title = ?, status = ?, updated_at = ? WHERE id = ?",
-            (title, "ready", time.time(), game_id),
-        )
+        conn.execute("UPDATE games SET title = ?, updated_at = ? WHERE id = ?",
+                     (title, time.time(), game_id))
 
 
-def set_status(game_id: str, status: str) -> None:
-    with platform_db() as conn:
-        conn.execute("UPDATE games SET status = ?, updated_at = ? WHERE id = ?",
-                     (status, time.time(), game_id))
+def move(game_id: str, status: str, stage: Optional[str] = None, *,
+         when_status: Sequence[str] = (), when_stage: Sequence[str] = (),
+         when_build: Optional[str] = None) -> bool:
+    where, params = ["id = ?"], [game_id]
+    if when_status:
+        where.append(f"status IN ({','.join('?' * len(when_status))})")
+        params += list(when_status)
+    if when_stage:
+        where.append(f"stage IN ({','.join('?' * len(when_stage))})")
+        params += list(when_stage)
+    if when_build is not None:
+        where.append(f"(SELECT id FROM builds WHERE game_id = games.id AND kind IN {CURSOR_KINDS} "
+                     "ORDER BY queued_at DESC, rowid DESC LIMIT 1) = ?")
+        params.append(when_build)
+    sets, values = ["status = ?", "updated_at = ?"], [status, time.time()]
+    if stage is not None:
+        sets.append("stage = ?")
+        values.append(stage)
+    with platform_db(immediate=True) as conn:
+        cur = conn.execute(f"UPDATE games SET {', '.join(sets)} WHERE {' AND '.join(where)}",
+                           values + params)
+    return cur.rowcount == 1
 
 
 def charge_game(game_id: str, credits: int, micros: int) -> None:
@@ -101,6 +117,21 @@ def create_build(game_id: str, kind: str = "build") -> str:
     return build_id
 
 
+CURSOR_KINDS = "('build', 'fix', 'change')"
+
+
+def current_build(game_id: str) -> Optional[Dict]:
+    with platform_db() as conn:
+        return row_dict(conn.execute(
+            f"SELECT * FROM builds WHERE game_id = ? AND kind IN {CURSOR_KINDS} "
+            "ORDER BY queued_at DESC, rowid DESC LIMIT 1", (game_id,)).fetchone())
+
+
+def save_cursor(build_id: str, cursor: str) -> None:
+    with platform_db() as conn:
+        conn.execute("UPDATE builds SET cursor = ? WHERE id = ?", (cursor, build_id))
+
+
 def build_started(build_id: str) -> None:
     with platform_db() as conn:
         conn.execute("UPDATE builds SET status = 'running', started_at = ? WHERE id = ?",
@@ -115,14 +146,13 @@ def build_finished(build_id: str, status: str, steps: Optional[int] = None) -> N
         )
 
 
-def finish_open_builds(game_id: str, status: str) -> List[Dict]:
-    now = time.time()
+def finish_open_builds(game_id: str, status: str, keep: str = "",
+                       kinds: str = CURSOR_KINDS) -> None:
     with platform_db() as conn:
-        rows = conn.execute(
-            "UPDATE builds SET status = ?, finished_at = ? "
-            "WHERE game_id = ? AND status IN ('queued', 'running') RETURNING id, kind",
-            (status, now, game_id)).fetchall()
-    return [dict(r) for r in rows]
+        conn.execute(
+            f"UPDATE builds SET status = ?, finished_at = ? WHERE game_id = ? AND id != ? "
+            f"AND kind IN {kinds} AND status IN ('queued', 'running')",
+            (status, time.time(), game_id, keep))
 
 
 def builds_for(game_id: str) -> List[Dict]:
@@ -134,15 +164,22 @@ def builds_for(game_id: str) -> List[Dict]:
 
 
 def stuck_builds(grace_seconds: float) -> List[str]:
-    """Games marked 'building' with no job of any kind in flight, for the reaper to re-advance."""
     cutoff = time.time() - grace_seconds
     with platform_db() as conn:
         rows = conn.execute(
-            "SELECT g.id FROM games g WHERE g.status = 'building' "
+            "SELECT g.id FROM games g WHERE g.status = 'running' AND g.stage = 'building' "
             "AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.game_id = g.id "
             "  AND j.status IN ('pending', 'claimed')) "
-            "AND (SELECT MAX(j2.finished_at) FROM jobs j2 WHERE j2.game_id = g.id) < ?",
+            "AND COALESCE((SELECT MAX(j2.finished_at) FROM jobs j2 WHERE j2.game_id = g.id), "
+            "  g.updated_at) < ?",
             (cutoff,)).fetchall()
+    return [r["id"] for r in rows]
+
+
+def checking_games() -> List[str]:
+    with platform_db() as conn:
+        rows = conn.execute(
+            "SELECT id FROM games WHERE status = 'running' AND stage = 'checking'").fetchall()
     return [r["id"] for r in rows]
 
 

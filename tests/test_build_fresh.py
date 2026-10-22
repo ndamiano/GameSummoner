@@ -8,14 +8,15 @@ a plain re-trigger, a resume and a fix all still carry the folder forward.
 
 import pytest
 
+from db import games
 from maestro.codegen import build_chain, build_state, staging
 
 
 @pytest.fixture
 def run(tmp_path, monkeypatch):
     """A run whose last build left files behind, with everything past the folder stubbed out."""
+    games.create_game(str(tmp_path), "u1")
     monkeypatch.setattr(build_chain, "_emit", lambda *a, **k: None)
-    monkeypatch.setattr(build_chain.games, "set_status", lambda *a, **k: None)
     monkeypatch.setattr(build_chain, "advance", lambda *a, **k: None)
     monkeypatch.setattr(build_chain.RunState, "read_spec", lambda self: {"request": "a game"})
     monkeypatch.setattr(build_chain.snapshots, "take", lambda *a, **k: "abc123")
@@ -74,7 +75,6 @@ def test_a_fresh_build_stops_the_art_the_last_one_is_still_waiting_on(run, tmp_p
 
 def test_a_first_build_has_nothing_to_clear(tmp_path, monkeypatch):
     monkeypatch.setattr(build_chain, "_emit", lambda *a, **k: None)
-    monkeypatch.setattr(build_chain.games, "set_status", lambda *a, **k: None)
     monkeypatch.setattr(build_chain, "advance", lambda *a, **k: None)
     monkeypatch.setattr(build_chain.RunState, "read_spec", lambda self: {"request": "a game"})
     taken = []
@@ -99,9 +99,10 @@ def test_a_run_with_no_folder_has_no_game(tmp_path):
 def test_a_change_keeps_the_folder_and_asks_for_the_change(run, tmp_path):
     """A change note is a person's 'let's change X' on a game that plays — it edits in place, the
     request names it as a change and not a defect, and the folder is snapshotted first."""
-    build_chain.start_build(run, "b2", kind="change", note="make the enemies twice as fast")
+    build_id = games.create_build(run, kind="change")
+    build_chain.start_build(run, build_id, kind="change", note="make the enemies twice as fast")
     assert (tmp_path / "game" / "story.js").exists()
-    cursor = build_state.load(tmp_path)
+    cursor = build_state.load(run)
     assert "asked for this change" in cursor.request
     assert "make the enemies twice as fast" in cursor.request
     assert "fix" not in cursor.request

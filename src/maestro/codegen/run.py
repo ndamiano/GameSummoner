@@ -101,7 +101,8 @@ def run_build(run_id: str, max_steps: int = build_state.DEFAULT_MAX_STEPS) -> Bu
     """Stage 2 (CLI/blocking): kick the build off, then poll the durable cursor to completion. The
     build itself is fire-and-forget — build_chain enqueues each llm turn and the control-plane's
     completion handler drives the next — so this only WAITS."""
-    build_chain.kickoff(run_id, kind="build", max_steps=max_steps)
+    if build_chain.kickoff(run_id, kind="build", max_steps=max_steps) is None:
+        raise RuntimeError(f"{run_id} is already running")
     return _await_build(run_id)
 
 
@@ -109,25 +110,26 @@ def change_from_note(run_id: str, note: str,
                      max_steps: int = build_state.DEFAULT_MAX_STEPS) -> BuildResult:
     """Change a built game from a HUMAN playtest note ("let's change X"). The note becomes the
     build's request and the same turn machine reads its way in and makes the change."""
-    build_chain.kickoff(run_id, kind="change", note=note, max_steps=max_steps)
+    if build_chain.kickoff(run_id, kind="change", note=note, max_steps=max_steps) is None:
+        raise RuntimeError(f"{run_id} is already running")
     return _await_build(run_id)
 
 
 def _await_build(run_id: str) -> BuildResult:
-    """Block until the build's cursor reports done, then summarize it. CLI-only."""
-    state = RunState(run_id)
     shown = 0
     while True:
-        cursor = build_state.load(state.run_dir)
-        if cursor is not None and cursor.phase == "done":
+        status = (games.game(run_id) or {}).get("status")
+        cursor = build_state.load(run_id)
+        if status != "running":
             break
         if cursor is not None and cursor.step != shown:
             shown = cursor.step
             print(f"step {shown}/{cursor.max_steps}", flush=True)
         time.sleep(_POLL_INTERVAL)
-    elapsed = time.time() - cursor.t0
-    logger.info("build %s: ok=%s steps=%d elapsed=%.1fs", run_id, cursor.ok, cursor.step, elapsed)
-    return BuildResult(bool(cursor.ok), cursor.step, elapsed, cursor.summary)
+    ok = status == "succeeded"
+    steps, elapsed = (cursor.step, time.time() - cursor.t0) if cursor else (0, 0.0)
+    logger.info("build %s: %s steps=%d elapsed=%.1fs", run_id, status, steps, elapsed)
+    return BuildResult(ok, steps, elapsed, cursor.summary if cursor else "")
 
 
 def _new_run(request: str) -> Optional[str]:
@@ -144,6 +146,7 @@ def _new_run(request: str) -> Optional[str]:
     open_ask(run_id, request)
     print(f"run: {run_id}\nask: {request!r}\ndesigning...")
     design.generate(run_id, request)
+    games.move(run_id, "paused", "building")
     spec = spec_path(RunState(run_id).run_dir)
     print(f"design: {len(spec.read_text().split())} words" if spec.exists()
           else "design: none — the ask is the prompt")

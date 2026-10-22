@@ -295,5 +295,5 @@ def after_build(run_id: str, build_id: str) -> bool:
     state["rounds"] += 1
     state["last_fact"] = key
     _save_state(rs.run_dir, state)
-    build_chain.kickoff(run_id, kind="fix", note=note_for_fact(fact))
-    return True
+    fix = build_chain.kickoff(run_id, kind="fix", note=note_for_fact(fact), after=build_id)
+    return fix is not None

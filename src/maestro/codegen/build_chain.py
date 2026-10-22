@@ -4,10 +4,13 @@ A linear chain of `llm` jobs: advance() applies a turn, runs local work, suspend
 
 from __future__ import annotations
 
+import fcntl
 import logging
+import os
 import shutil
 import threading
 import time
+from contextlib import contextmanager
 from typing import Dict, Optional
 
 from db import errors, games, jobs
@@ -31,95 +34,138 @@ from tools.safety import log_violation
 
 logger = logging.getLogger(__name__)
 
-# One advance at a time per run — the completion handler and the reaper both call advance, and only
-# the control-plane process ever does, so an in-process lock is sufficient mutual exclusion.
-_locks: Dict[str, threading.Lock] = {}
+class _RunLock:
+    def __init__(self, run_id: str):
+        self.run_id = run_id
+        self.local = threading.RLock()
+        self.depth = 0
+        self.fd = None
+
+    @contextmanager
+    def hold(self, blocking: bool = True):
+        if not self.local.acquire(blocking=blocking):
+            yield False
+            return
+        try:
+            if self.depth == 0:
+                fd = os.open(RunState(self.run_id).run_dir / ".lock", os.O_CREAT | os.O_RDWR, 0o644)
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
+                except BlockingIOError:
+                    os.close(fd)
+                    yield False
+                    return
+                self.fd = fd
+            self.depth += 1
+            try:
+                yield True
+            finally:
+                self.depth -= 1
+                if self.depth == 0:
+                    fcntl.flock(self.fd, fcntl.LOCK_UN)
+                    os.close(self.fd)
+                    self.fd = None
+        finally:
+            self.local.release()
+
+
+_locks: Dict[str, _RunLock] = {}
 _locks_guard = threading.Lock()
 
 
-def _lock_for(run_id: str) -> threading.Lock:
+def _run_lock(run_id: str, blocking: bool = True):
     with _locks_guard:
         lk = _locks.get(run_id)
         if lk is None:
-            lk = _locks[run_id] = threading.Lock()
-        return lk
+            lk = _locks[run_id] = _RunLock(run_id)
+    return lk.hold(blocking)
 
 
 def kickoff(run_id: str, *, kind: str = "build", note: str = "", fresh: bool = False,
-            max_steps: int = DEFAULT_MAX_STEPS) -> str:
+            max_steps: int = DEFAULT_MAX_STEPS, after: Optional[str] = None,
+            designed: bool = False) -> Optional[str]:
+    if after is not None:
+        guard = dict(when_status=("running",), when_stage=("checking",), when_build=after)
+    elif designed:
+        guard = dict(when_status=("running",), when_stage=("designing",))
+    else:
+        guard = dict(when_status=("paused", "failed", "succeeded"))
+    with _run_lock(run_id):
+        if not games.move(run_id, "running", "building", **guard):
+            return None
+        return _begin(run_id, kind=kind, note=note, fresh=fresh, max_steps=max_steps)
+
+
+def _begin(run_id: str, *, kind: str = "build", note: str = "", fresh: bool = False,
+           max_steps: int = DEFAULT_MAX_STEPS) -> str:
+    replaced = games.current_build(run_id)
+    if replaced is not None:
+        jobs.abandon_build_jobs(replaced["id"], "replaced by a new build")
     build_id = games.create_build(run_id, kind=kind)
+    games.finish_open_builds(run_id, "stopped", keep=build_id)
     games.build_started(build_id)
     start_build(run_id, build_id, kind=kind, note=note, fresh=fresh, max_steps=max_steps)
     return build_id
 
 
 def pause(run_id: str) -> bool:
-    lock = _lock_for(run_id)
-    lock.acquire()   # an advance mid-flight must finish enqueueing before its job can be cancelled
-    try:
-        rs = RunState(run_id)
-        cursor = build_state.load(rs.run_dir)
-        if cursor is None or cursor.phase == "done":
+    with _run_lock(run_id):
+        stage = (games.game(run_id) or {}).get("stage")
+        if not games.move(run_id, "paused", when_status=("running",)):
             return False
-        cursor.paused = True
-        if cursor.build_id and jobs.cancel_pending_build_turn(cursor.build_id, "paused by hand"):
-            cursor.step = max(0, cursor.step - 1)
-        build_state.save(rs.run_dir, cursor)
-        _emit("build_paused", run_id, build_id=cursor.build_id, step=cursor.step)
+        cancelled = jobs.cancel_pending_game_jobs(run_id, "paused by hand")
+        if stage == "designing":
+            games.finish_open_builds(run_id, "stopped", kinds="('design')")
+        cursor = build_state.load(run_id)
+        if stage == "building" and cursor is not None:
+            if any(j["build_id"] == cursor.build_id and j["metadata"].get("stage") == "build"
+                   for j in cancelled):
+                cursor.step = max(0, cursor.step - 1)
+                build_state.save(cursor)
+            if _stage(run_id, RunState(run_id), cursor, "paused"):
+                return True
+        _emit("build_paused", run_id, build_id=cursor.build_id if cursor else None,
+              step=cursor.step if cursor else 0)
         return True
-    finally:
-        lock.release()
 
 
-def stop(run_id: str) -> bool:
-    """End everything the run has in flight and keep what it wrote; False when nothing was."""
-    lock = _lock_for(run_id)
-    lock.acquire()
-    try:
-        rs = RunState(run_id)
-        cursor = build_state.load(rs.run_dir)
-        cancelled = jobs.abandon_game_jobs(run_id, "the run was stopped by hand")
-        live = cursor is not None and cursor.phase != "done"
-        if live:
-            _finalize(run_id, rs, cursor, ok=_playable(rs.run_dir), attempt="stopped")
-        ended = games.finish_open_builds(run_id, "stopped")
-        if any(b["kind"] == "design" for b in ended):
-            _end_design(run_id, rs, next(b["id"] for b in ended if b["kind"] == "design"))
-        return live or bool(cancelled) or bool(ended)
-    finally:
-        lock.release()
+def resume(run_id: str) -> bool:
+    from maestro.codegen import design
+    with _run_lock(run_id):
+        stage = (games.game(run_id) or {}).get("stage")
+        if not games.move(run_id, "running", when_status=("paused",)):
+            return False
+        cursor = build_state.load(run_id)
+        _emit("build_resumed", run_id, build_id=cursor.build_id if cursor else None,
+              step=cursor.step if cursor else 0)
+        if stage == "designing":
+            spec = RunState(run_id).read_spec() or {}
+            if not spec.get("request"):
+                design.enqueue(run_id, spec.get("ask", ""))
+                return True
+            games.move(run_id, "running", "building")
+            _begin(run_id)
+        elif stage == "checking" and cursor is not None:
+            threading.Thread(target=_post_finalize, args=(run_id, cursor.build_id),
+                             daemon=True).start()
+        elif cursor is None or games.current_build(run_id)["status"] not in ("queued", "running"):
+            _begin(run_id)
+        else:
+            advance(run_id, wait=True)
+        return True
 
 
-def _end_design(run_id: str, rs: RunState, build_id: str) -> None:
-    from maestro.codegen.run import set_prompt
-    spec = rs.read_spec() or {}
-    if not spec.get("request") and spec.get("ask"):
-        set_prompt(run_id, spec["ask"], event="prompt_proposed")
-    games.set_status(run_id, "stopped")
-    _emit("build_done", run_id, build_id=build_id, ok=False, steps=0)
+def recover() -> None:
+    for run_id in games.checking_games():
+        cursor = build_state.load(run_id)
+        if cursor is not None:
+            logger.warning("build %s: re-running gates the last process never finished", run_id)
+            threading.Thread(target=_post_finalize, args=(run_id, cursor.build_id),
+                             daemon=True).start()
 
 
-def resume(run_id: str) -> None:
-    """Re-drive a mid-flight build — one paused, or one whose driver process died."""
-    rs = RunState(run_id)
-    cursor = build_state.load(rs.run_dir)
-    if cursor is not None and cursor.paused:
-        cursor.paused = False
-        build_state.save(rs.run_dir, cursor)
-        _emit("build_resumed", run_id, build_id=cursor.build_id, step=cursor.step)
-    advance(run_id)
-
-
-def is_active(run_id: str) -> bool:
-    cursor = build_state.load(RunState(run_id).run_dir)
-    return cursor is not None and cursor.phase != "done"
-
-
-def status_of(run_id: str) -> Optional[Dict]:
-    cursor = build_state.load(RunState(run_id).run_dir)
-    if cursor is None or cursor.phase == "done":
-        return None
-    return {"kind": cursor.kind, "paused": cursor.paused}
+def is_running(run_id: str) -> bool:
+    return (games.game(run_id) or {}).get("status") == "running"
 
 
 def start_build(run_id: str, build_id: str, *, kind: str = "build", note: str = "",
@@ -143,10 +189,8 @@ def start_build(run_id: str, build_id: str, *, kind: str = "build", note: str = 
                           f"for this change:\n{note}\n\nRead the files and make exactly that "
                           "change, keeping everything else playing as it does. Call done when it "
                           "is made.")
-    build_state.save(rs.run_dir, cursor)
-    games.set_status(run_id, "building")
+    build_state.save(cursor)
     _emit("build_started", run_id, build_id=build_id, max_steps=max_steps, started_at=cursor.t0)
-    # wait=True: this first advance must never be dropped by a lock another finalize still holds.
     advance(run_id, wait=True)
 
 
@@ -169,42 +213,49 @@ def _seed(rs: RunState) -> None:
 
 def on_completion(run_id: str, build_id: str, result: Optional[Dict], error: Optional[str],
                   job_id: str, exec_seconds: float) -> None:
-    advance(run_id, result if (error is None and result) else {},
+    advance(run_id, result if (error is None and result) else {}, wait=True, build_id=build_id,
             landed={"job_id": job_id, "exec_seconds": exec_seconds, "error": error})
 
 
 def advance(run_id: str, result: Optional[Dict] = None, *, wait: bool = False,
-            landed: Optional[Dict] = None) -> None:
-    """Run the state machine forward until it must infer or the build finishes."""
-    lock = _lock_for(run_id)
-    if wait:
-        lock.acquire()
-    elif not lock.acquire(blocking=False):
-        return   # another advance (completion or reaper) is already driving this run
-    try:
-        _advance_locked(run_id, result, landed)
-    finally:
-        lock.release()
+            landed: Optional[Dict] = None, build_id: Optional[str] = None) -> None:
+    with _run_lock(run_id, blocking=wait) as held:
+        if held:
+            _advance_locked(run_id, result, landed, build_id)
 
 
-def _advance_locked(run_id: str, result: Optional[Dict], landed: Optional[Dict] = None) -> None:
-    rs = RunState(run_id)
-    spec = rs.read_spec()
-    cursor = build_state.load(rs.run_dir)
-    if cursor is None or cursor.phase == "done":
+def _advance_locked(run_id: str, result: Optional[Dict], landed: Optional[Dict],
+                    build_id: Optional[str]) -> None:
+    game = games.game(run_id)
+    build = games.current_build(run_id)
+    if game is None or build is None:
         return
+    if build_id is not None and build_id != build["id"]:
+        logger.warning("build %s: dropped a turn from replaced build %s", run_id, build_id)
+        return
+    if game["stage"] != "building" or game["status"] not in ("running", "paused"):
+        return
+    cursor = build_state.load(run_id)
+    if cursor is None or build["status"] not in ("queued", "running"):
+        if games.move(run_id, "failed", when_status=("running",), when_stage=("building",)):
+            logger.error("build %s: running with no live build to drive", run_id)
+            _emit("build_done", run_id, build_id=build["id"], ok=False, steps=0,
+                  error="the build lost its place")
+        return
+    rs = RunState(run_id)
     if landed:
         _archive_turn(rs, cursor, landed, result)
-    if cursor.paused and result is None:
-        return   # nothing to apply, and a re-drive (reaper, resume race) must not restart a parked build
+    paused = game["status"] == "paused"
+    if paused and result is None:
+        return
     tools = build_tools(rs, cursor.build_id)
-    outcome = build_steps.step(spec, rs.run_dir, tools, cursor, result,
+    outcome = build_steps.step(rs.read_spec(), rs.run_dir, tools, cursor, result,
                                error=(landed or {}).get("error"))
 
     if isinstance(outcome, build_steps.Infer):
-        if cursor.paused:
+        if paused:
             # A turn claimed before the pause. Its work is kept; what pause withholds is the NEXT one.
-            build_state.save(rs.run_dir, cursor)
+            build_state.save(cursor)
             _emit_step(run_id, cursor, outcome.report)
             return
         cursor.step += 1
@@ -221,11 +272,8 @@ def _advance_locked(run_id: str, result: Optional[Dict], landed: Optional[Dict] 
                 # whatever `llm.api` happens to be the day the log is read.
                 wire="chat")
             cursor.meta_logged = True
-        build_state.save(rs.run_dir, cursor)
-        _enqueue_turn(run_id, cursor, outcome)
-        # A refused compute budget ends the run inside _enqueue_turn; a step line after that
-        # `build_done` would read as progress the build never made.
-        if cursor.phase != "done":
+        build_state.save(cursor)
+        if _enqueue_turn(run_id, cursor, outcome):
             _emit_step(run_id, cursor, outcome.report)
         return
 
@@ -248,84 +296,79 @@ def _playable(run_dir) -> bool:
     return entry_path(run_dir).exists()
 
 
-def _finalize(run_id: str, rs: RunState, cursor: BuildCursor, ok: bool,
-              attempt: Optional[str] = None, error: Optional[str] = None) -> None:
-    playable = _playable(rs.run_dir)
-    held = artifact_screen.screen_artifact(rs.run_dir) if playable else None
-    # A gated build is not FINISHED yet, and saying it is shows a person a built game that cuts
-    # back to mending seconds later. It stages — the gate opens the staged game — but the status,
-    # the event and the phase wait for `_settle`.
-    gated = ok and held is None and attempt is None
-    cursor.phase = "checking" if gated else "done"
-    cursor.ok = ok and held is None
-    build_state.save(rs.run_dir, cursor)
-    if held is not None:
-        # A held game exists only in its run dir: not staged, not snapshotted, not archived. The
-        # owner sees a neutral status; the violation row is what the admin panel reads.
-        path, violation = held
-        log_violation(violation, run_id=run_id, source=f"artifact:{path}")
-        games.set_status(run_id, "held")
-        shares.unshare(run_id)
-        if cursor.build_id:
-            games.build_finished(cursor.build_id, "held", steps=cursor.step)
-        logger.warning("build %s held: artifact screen hit in %s", run_id, path)
-        _emit("build_done", run_id, build_id=cursor.build_id, ok=False, steps=cursor.step,
-              held=True)
-        return
-    if playable:
+def _stage(run_id: str, rs: RunState, cursor: BuildCursor, label: str) -> bool:
+    """Stage a playable game, or hold it when the artifact screen hits; True when held."""
+    if not _playable(rs.run_dir):
+        return False
+    held = artifact_screen.screen_artifact(rs.run_dir)
+    if held is None:
         stage_for_play(rs.run_dir, run_id)
-        snapshots.take(rs.run_dir, "built")
-    if cursor.build_id:
-        games.build_finished(cursor.build_id, attempt or ("succeeded" if ok else "failed"),
-                                steps=cursor.step)
+        snapshots.take(rs.run_dir, label)
+        return False
+    path, violation = held
+    log_violation(violation, run_id=run_id, source=f"artifact:{path}")
+    games.move(run_id, "held")
+    shares.unshare(run_id)
+    games.build_finished(cursor.build_id, "held", steps=cursor.step)
+    logger.warning("build %s held: artifact screen hit in %s", run_id, path)
+    _emit("build_done", run_id, build_id=cursor.build_id, ok=False, steps=cursor.step, held=True)
+    return True
+
+
+def _finalize(run_id: str, rs: RunState, cursor: BuildCursor, ok: bool,
+              error: Optional[str] = None) -> None:
+    if _stage(run_id, rs, cursor, "built"):
+        return
+    cursor.ok = ok
+    build_state.save(cursor)
+    games.build_finished(cursor.build_id, "succeeded" if ok else "failed", steps=cursor.step)
     logger.info("build %s finalized: ok=%s steps=%d", run_id, ok, cursor.step)
-    if gated:
-        # Post-finalize runs AFTER the lock this finalize holds is released — a kickoff blocks on
-        # the same lock, so running it inline here would deadlock. A build stopped by hand gets
-        # no gate: the human ended it, and an auto-build would restart what they stopped.
+    status = (games.game(run_id) or {}).get("status")
+    if not ok:
+        if games.move(run_id, "failed", when_status=("running", "paused"),
+                      when_stage=("building",), when_build=cursor.build_id):
+            extra = {"error": error} if error else {}
+            _emit("build_done", run_id, build_id=cursor.build_id, ok=False, steps=cursor.step,
+                  **extra)
+        return
+    if not games.move(run_id, status, "checking", when_status=(status,), when_stage=("building",),
+                      when_build=cursor.build_id):
+        return
+    if status == "running":
         threading.Thread(target=_post_finalize, args=(run_id, cursor.build_id), daemon=True).start()
-        return
-    _announce(run_id, rs, cursor, ok, error, stopped=attempt == "stopped")
 
 
-def _announce(run_id: str, rs: RunState, cursor: BuildCursor, ok: bool,
-              error: Optional[str] = None, stopped: bool = False) -> None:
-    """The end of the whole chain, said once: the run's status and `build_done`."""
-    games.set_status(run_id, "built" if ok else "stopped" if stopped else "failed")
-    extra = {"error": error} if error else {}
-    _emit("build_done", run_id, build_id=cursor.build_id, ok=ok, steps=cursor.step, **extra)
-
-
-def _settle(run_id: str) -> None:
+def _settle(run_id: str, build_id: str) -> bool:
     """No gate kicked a fix, so this build is the end of the chain."""
-    rs = RunState(run_id)
-    cursor = build_state.load(rs.run_dir)
-    if cursor is None or cursor.phase != "checking":
-        return
-    cursor.phase = "done"
-    build_state.save(rs.run_dir, cursor)
-    _announce(run_id, rs, cursor, bool(cursor.ok))
+    cursor = build_state.load(run_id)
+    if cursor is None or cursor.build_id != build_id:
+        return False
+    if not games.move(run_id, "succeeded" if cursor.ok else "failed", when_status=("running",),
+                      when_stage=("checking",), when_build=build_id):
+        return False
+    _emit("build_done", run_id, build_id=build_id, ok=bool(cursor.ok), steps=cursor.step)
+    return True
 
 
 def _post_finalize(run_id: str, build_id: str) -> None:
-    """The error gate, then the play gate, then the archive."""
     from maestro.codegen import archive
     try:
         kicked = (error_gate.after_build(run_id, build_id)
-                  or play_gate.after_build(run_id, build_id))
+                  or (is_running(run_id) and play_gate.after_build(run_id, build_id)))
     except Exception:
-        # A gate that raises must not leave the run `checking` forever — the page would show a
-        # build that never ends and the CLI would never return.
+        if not is_running(run_id):
+            logger.info("build %s: gates stopped by a pause", run_id)
+            return
         logger.exception("build %s: a gate raised; settling the run where it stands", run_id)
-        _settle(run_id)
+        _settle(run_id, build_id)
         raise
-    if kicked:
-        return          # the fix build announces the end of the chain when IT settles
-    _settle(run_id)
-    archive.archive(run_id)
+    if kicked or not is_running(run_id):
+        return
+    if _settle(run_id, build_id):
+        archive.archive(run_id)
 
 
-def _enqueue_turn(run_id: str, cursor: BuildCursor, inf: "build_steps.Infer") -> None:
+def _enqueue_turn(run_id: str, cursor: BuildCursor, inf: "build_steps.Infer") -> bool:
     conn = get_connector()
     payload, model = conn.build_llm_job(inf.messages, inf.schemas, inf.max_tokens)
 
@@ -334,7 +377,12 @@ def _enqueue_turn(run_id: str, cursor: BuildCursor, inf: "build_steps.Infer") ->
                              metadata={"stage": "build", "run_id": run_id, "build_id": cursor.build_id})
 
     try:
-        return _enqueue()
+        _enqueue()
+        return True
+    except errors.GamePaused:
+        cursor.step = max(0, cursor.step - 1)
+        build_state.save(cursor)
+        return False
     except errors.InsufficientCompute as e:
         err = e
         released = jobs.abandon_pending_batch_jobs(
@@ -343,11 +391,13 @@ def _enqueue_turn(run_id: str, cursor: BuildCursor, inf: "build_steps.Infer") ->
             logger.warning("build %s: preempted %d queued asset job(s) to admit the next turn",
                            run_id, released)
             try:
-                return _enqueue()
+                _enqueue()
+                return True
             except errors.InsufficientCompute as e2:
                 err = e2
         logger.error("build %s turn refused: %s", run_id, err)
         _finalize(run_id, RunState(run_id), cursor, ok=False, error=f"compute exhausted: {err}")
+        return False
 
 
 def _emit_step(run_id: str, cursor: BuildCursor, summary: str) -> None:

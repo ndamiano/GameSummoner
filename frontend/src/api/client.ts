@@ -196,8 +196,6 @@ export const api = {
         request<{ status: string }>(`/api/games/${runId}/pause`, { method: 'POST' }),
     resumeGame: (runId: string) =>
         request<{ status: string }>(`/api/games/${runId}/resume`, { method: 'POST' }),
-    stopGame: (runId: string) =>
-        request<{ status: string }>(`/api/games/${runId}/stop`, { method: 'POST' }),
     changeGame: (runId: string, note: string) =>
         request<{ status: string; run_id: string }>(`/api/games/${runId}/change`, { method: 'POST', body: JSON.stringify({ note }) }),
     renderAssets: (runId: string) =>

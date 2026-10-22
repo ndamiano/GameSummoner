@@ -17,7 +17,8 @@ ROOT = Path(__file__).resolve().parent.parent
 PYTHON = str(ROOT / "venv" / "bin" / "python")
 sys.path.insert(0, str(ROOT / "src"))
 
-from db import connection  # noqa: E402
+from db import connection
+from maestro.codegen import build_state
 
 STALE_SECONDS = 300
 TAIL_BYTES = 256_000
@@ -148,7 +149,7 @@ class LocalBackend:
             for b in c.execute("SELECT game_id, kind, status, queued_at, started_at, finished_at FROM builds"):
                 builds.setdefault(b["game_id"], []).append(dict(b))
             stirring = {r[0] for r in c.execute(
-                "SELECT game_id FROM jobs WHERE game_id IN (SELECT id FROM games WHERE status = 'building') "
+                "SELECT game_id FROM jobs WHERE game_id IN (SELECT id FROM games WHERE status = 'running') "
                 "GROUP BY game_id HAVING SUM(status IN ('pending', 'claimed')) > 0 "
                 "OR MAX(MAX(created_at, COALESCE(finished_at, 0))) > ?", (time.time() - STALE_SECONDS,))}
         out = []
@@ -164,12 +165,8 @@ class LocalBackend:
 
     def detail(self, run_id: str) -> dict:
         run = self.runs / run_id
-        out = {"step": 0, "max_steps": 0}
-        try:
-            cursor = json.loads((run / "build_state.json").read_text())
-            out = {"step": cursor.get("step") or 0, "max_steps": cursor.get("max_steps") or 0}
-        except (OSError, ValueError):
-            pass
+        cursor = build_state.load(run_id)
+        out = {"step": cursor.step if cursor else 0, "max_steps": cursor.max_steps if cursor else 0}
         if run_id not in self._designs and (run / "design.md").exists():
             words, picks = design_summary(run / "design.md")
             self._designs[run_id] = " · ".join([f"{words:,} words", *picks[:5]])
@@ -200,9 +197,9 @@ class LocalBackend:
         for _ in self._run(["-m", "maestro.codegen.run", "--change", run_id, note], run_id):
             pass
 
-    def stop(self, run_id: str) -> None:
-        for _ in self._run(["-c", "import sys; from maestro.codegen import build_chain; "
-                                  "build_chain.stop(sys.argv[1])", run_id], run_id):
+    def pause(self, run_id: str) -> None:
+        for _ in self._run(["-c", ("import sys; from maestro.codegen import build_chain; "
+                                   "build_chain.pause(sys.argv[1])"), run_id], run_id):
             pass
 
     def _run(self, argv: list, run_id: str = "-"):

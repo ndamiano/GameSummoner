@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS games (
     user_id         TEXT NOT NULL,
     title           TEXT NOT NULL DEFAULT '',
     mode            TEXT NOT NULL DEFAULT '',
-    status          TEXT NOT NULL DEFAULT 'draft',
+    stage           TEXT NOT NULL DEFAULT 'designing',
+    status          TEXT NOT NULL DEFAULT 'running',
     credits_spent   INTEGER NOT NULL DEFAULT 0,
     granted_micros  INTEGER NOT NULL DEFAULT 0,
     spent_micros    INTEGER NOT NULL DEFAULT 0,
@@ -25,7 +26,8 @@ CREATE TABLE IF NOT EXISTS builds (
     queued_at    REAL NOT NULL,
     started_at   REAL,
     finished_at  REAL,
-    maestro_rev  TEXT
+    maestro_rev  TEXT,
+    cursor       TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_builds_game ON builds(game_id, queued_at);
 

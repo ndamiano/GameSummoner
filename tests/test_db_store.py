@@ -13,7 +13,7 @@ def test_create_and_owner():
     assert games.owner_of("g1") == "u1"
     assert games.owner_of("ghost") is None
     row = games.game("g1")
-    assert row["status"] == "draft"
+    assert (row["stage"], row["status"]) == ("designing", "running")
     assert row["credits_spent"] == 0
 
 
@@ -23,12 +23,28 @@ def test_list_is_per_user():
     assert [g["id"] for g in games.list_games("u1")] == ["g1"]
 
 
-def test_prompt_meta_mirrors_the_title_and_marks_the_run_buildable():
+def test_prompt_meta_mirrors_the_title_and_leaves_where_the_game_stands():
     games.create_game("g1", "u1")
-    assert games.game("g1")["status"] == "draft"
     games.update_prompt_meta("g1", "Moon Miner")
     row = games.game("g1")
-    assert (row["title"], row["status"]) == ("Moon Miner", "ready")
+    assert (row["title"], row["stage"], row["status"]) == ("Moon Miner", "designing", "running")
+
+
+def test_a_move_wins_only_from_where_the_caller_saw_the_game():
+    games.create_game("g1", "u1")
+    first = games.create_build("g1", kind="build")
+    assert games.move("g1", "running", "checking", when_status=("running",),
+                      when_stage=("designing",)) is True
+    assert games.move("g1", "running", "building", when_stage=("designing",)) is False
+    fix = games.create_build("g1", kind="fix")
+    games.create_build("g1", kind="assets")
+    assert games.current_build("g1")["id"] == fix
+    assert games.move("g1", "running", "building", when_stage=("checking",),
+                      when_build=first) is False
+    assert games.move("g1", "paused", when_status=("running",), when_build=fix) is True
+    assert games.move("g1", "running", when_status=("running",)) is False
+    row = games.game("g1")
+    assert (row["stage"], row["status"]) == ("checking", "paused")
 
 
 def test_charge_grants_compute_and_is_durable():
@@ -119,26 +135,19 @@ def _build_with_art():
     return bid, turn, art
 
 
-def test_cancel_pending_build_turn_spares_the_art():
-    """Asset renders ride the same build_id as the turn that asked for them, so a pause that failed
-    every job under the build would throw away art the model already paid for."""
+def test_cancelling_a_games_jobs_fails_every_queued_one_and_leaves_a_claimed_one_to_land():
     bid, turn, art = _build_with_art()
-    assert jobs.cancel_pending_build_turn(bid, "paused by hand") == 1
-    assert jobs.get_job(turn)["status"] == "failed"
-    assert jobs.get_job(art)["status"] == "pending"
-
-
-def test_a_claimed_turn_is_left_to_its_worker():
-    bid, turn, _ = _build_with_art()
     jobs.claim_job("llm", "w1", 60)
-    assert jobs.cancel_pending_build_turn(bid, "paused by hand") == 0
-    assert jobs.get_job(turn)["status"] == "claimed"
+    cancelled = jobs.cancel_pending_game_jobs("g1", "paused by hand")
+    assert [(j["id"], j["build_id"], j["metadata"]["asset_id"]) for j in cancelled] == \
+        [(art, bid, "goblin")]
+    assert (jobs.get_job(turn)["status"], jobs.get_job(art)["status"]) == ("claimed", "failed")
 
 
 def test_stuck_builds_counts_every_job_on_the_game_not_only_build_turns():
     games.create_game("g1", "u1")
     games.charge_game("g1", 10, 144_000)
-    games.set_status("g1", "building")
+    games.move("g1", "running", "building")
     bid = games.create_build("g1", kind="build")
     turn = jobs.enqueue_job("llm", {}, game_id="g1", build_id=bid,
                             metadata={"stage": "build", "run_id": "g1", "build_id": bid})
@@ -154,6 +163,15 @@ def test_stuck_builds_counts_every_job_on_the_game_not_only_build_turns():
     finish(gate, 10)
     assert games.stuck_builds(60) == []
     finish(gate, 120)
+    assert games.stuck_builds(60) == ["g1"]
+
+
+def test_a_running_build_that_never_queued_a_job_is_stuck_once_its_grace_is_up():
+    games.create_game("g1", "u1")
+    games.move("g1", "running", "building")
+    assert games.stuck_builds(60) == []
+    with connection.platform_db() as conn:
+        conn.execute("UPDATE games SET updated_at = updated_at - 120 WHERE id = 'g1'")
     assert games.stuck_builds(60) == ["g1"]
 
 
@@ -263,7 +281,7 @@ def test_every_failed_path_leaves_measurements_not_words():
     assert _payload_of(by_build) == measured
 
     cancelled = _enqueue_llm_turn(build_id="b3")
-    assert jobs.cancel_pending_build_turn("b3", "paused") == 1
+    assert [j["id"] for j in jobs.cancel_pending_game_jobs("g1", "paused")] == [cancelled]
     assert _payload_of(cancelled) == measured
 
     stale = _enqueue_llm_turn(build_id="b4")

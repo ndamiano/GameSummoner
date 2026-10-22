@@ -13,7 +13,7 @@ from billing.estimates import (
     calculate_job_cost,
 )
 from db.connection import platform_db
-from db.errors import BuildEnded, InsufficientCompute
+from db.errors import BuildEnded, GamePaused, InsufficientCompute
 from db.games import remaining_locked
 
 logger = logging.getLogger(__name__)
@@ -30,6 +30,9 @@ def _insert_job_locked(conn, queue: str, payload: Dict, game_id: Optional[str],
             raise InsufficientCompute(game_id, remaining, reserved)
         if build_id is None:
             raise ValueError(f"job on game {game_id!r} has no build_id")
+        game = conn.execute("SELECT status FROM games WHERE id = ?", (game_id,)).fetchone()
+        if game is not None and game["status"] in ("paused", "held"):
+            raise GamePaused(f"game {game_id} is {game['status']}")
         build = conn.execute("SELECT status FROM builds WHERE id = ?", (build_id,)).fetchone()
         if build is not None and build["status"] == "stopped":
             raise BuildEnded(f"build {build_id} of game {game_id} was stopped")
@@ -70,23 +73,18 @@ def abandon_job(job_id: str, error: str) -> bool:
     return n == 1
 
 
-def abandon_game_jobs(game_id: str, error: str) -> int:
-    with platform_db() as conn:
-        return _fail_locked(conn, "game_id = ? AND status IN ('pending', 'claimed')",
-                            (game_id,), error)
-
-
 def abandon_build_jobs(build_id: str, error: str) -> int:
     """Fail a build's unfinished turns; a claimed one is left to its worker."""
     with platform_db() as conn:
         return _fail_locked(conn, "build_id = ? AND status = 'pending'", (build_id,), error)
 
 
-def cancel_pending_build_turn(build_id: str, error: str) -> int:
+def cancel_pending_game_jobs(game_id: str, error: str) -> List[Dict]:
     with platform_db() as conn:
-        return _fail_locked(
-            conn, "build_id = ? AND status = 'pending' AND queue = 'llm' "
-            "AND json_extract(metadata, '$.stage') = 'build'", (build_id,), error)
+        rows = conn.execute("SELECT id, build_id, queue, metadata FROM jobs "
+                            "WHERE game_id = ? AND status = 'pending'", (game_id,)).fetchall()
+        _fail_locked(conn, "game_id = ? AND status = 'pending'", (game_id,), error)
+    return [{**dict(r), "metadata": json.loads(r["metadata"] or "{}")} for r in rows]
 
 
 def abandon_pending_batch_jobs(game_id: str, error: str) -> int:
