@@ -77,9 +77,9 @@ def test_a_job_on_a_game_must_name_its_build():
     games.create_game("g1", "u1")
     games.charge_game("g1", 1, 1_000_000)
     with pytest.raises(ValueError):
-        jobs.enqueue_job("llm", {}, game_id="g1")
-    assert jobs.enqueue_job("llm", {}, game_id="g1", build_id="b1")
-    assert jobs.enqueue_job("llm", {})
+        jobs.enqueue_job("llm", {}, game_id="g1", model="qwen-flash-next")
+    assert jobs.enqueue_job("llm", {}, game_id="g1", build_id="b1", model="qwen-flash-next")
+    assert jobs.enqueue_job("llm", {}, model="qwen-flash-next")
 
 
 def test_a_game_accumulates_builds():
@@ -129,7 +129,7 @@ def _build_with_art():
     games.charge_game("g1", 10, 144_000)
     bid = games.create_build("g1", kind="build")
     turn = jobs.enqueue_job("llm", {}, game_id="g1", build_id=bid,
-                             metadata={"stage": "build", "run_id": "g1", "build_id": bid})
+                             metadata={"stage": "build", "run_id": "g1", "build_id": bid}, model="qwen-flash-next")
     art = jobs.enqueue_job("comfy", {}, game_id="g1", build_id=bid, batch_id="b",
                             metadata={"run_id": "g1", "asset_id": "goblin"})
     return bid, turn, art
@@ -137,6 +137,7 @@ def _build_with_art():
 
 def test_cancelling_a_games_jobs_fails_every_queued_one_and_leaves_a_claimed_one_to_land():
     bid, turn, art = _build_with_art()
+    workers.worker_created("w1", None, "llm", None, 0.99, model="qwen-flash-next")
     jobs.claim_job("llm", "w1", 60)
     cancelled = jobs.cancel_pending_game_jobs("g1", "paused by hand")
     assert [(j["id"], j["build_id"], j["metadata"]["asset_id"]) for j in cancelled] == \
@@ -150,8 +151,8 @@ def test_stuck_builds_counts_every_job_on_the_game_not_only_build_turns():
     games.move("g1", "running", "building")
     bid = games.create_build("g1", kind="build")
     turn = jobs.enqueue_job("llm", {}, game_id="g1", build_id=bid,
-                            metadata={"stage": "build", "run_id": "g1", "build_id": bid})
-    gate = jobs.enqueue_job("llm", {}, game_id="g1", build_id=bid)
+                            metadata={"stage": "build", "run_id": "g1", "build_id": bid}, model="qwen-flash-next")
+    gate = jobs.enqueue_job("llm", {}, game_id="g1", build_id=bid, model="qwen-flash-next")
 
     def finish(job_id, seconds_ago):
         with connection.platform_db() as conn:
@@ -175,17 +176,21 @@ def test_a_running_build_that_never_queued_a_job_is_stuck_once_its_grace_is_up()
     assert games.stuck_builds(60) == ["g1"]
 
 
-def test_queue_has_work_sees_pending_and_lapsed_leases():
-    jobs.enqueue_job("llm", {"k": 1})
-    assert jobs.queue_has_work("llm") is True
-    assert jobs.queue_has_work("comfy") is False
+def test_queue_has_work_sees_pending_and_lapsed_leases_of_the_workers_own_model():
+    workers.worker_created("w1", None, "llm", None, 0.99, model="qwen-flash-next")
+    workers.worker_created("other", None, "llm", None, 0.99, model="deepseek-4.1")
+    workers.worker_created("image", None, "comfy", None, 0.99)
+    jobs.enqueue_job("llm", {"k": 1}, model="qwen-flash-next")
+    assert jobs.queue_has_work("llm", "w1") is True
+    assert jobs.queue_has_work("llm", "other") is False
+    assert jobs.queue_has_work("comfy", "image") is False
 
     job = jobs.claim_job("llm", "w1", lease_seconds=60)
-    assert jobs.queue_has_work("llm") is False
+    assert jobs.queue_has_work("llm", "w1") is False
 
     with connection.platform_db() as conn:
         conn.execute("UPDATE jobs SET lease_expires_at = 0 WHERE id = ?", (job["id"],))
-    assert jobs.queue_has_work("llm") is True
+    assert jobs.queue_has_work("llm", "w1") is True
 
 
 def test_a_finished_llm_row_keeps_measurements_and_never_the_words():
@@ -195,8 +200,8 @@ def test_a_finished_llm_row_keeps_measurements_and_never_the_words():
         "model": "qwen", "max_tokens": 2048, "reasoning": "medium",
         "messages": [{"role": "system", "content": "You are a game designer."},
                      {"role": "user", "content": "Make a space game"}],
-        "tools": [{"name": "draw_sprite"}]}}, game_id="g1", build_id="b1")
-    workers.worker_created("w1", None, "llm", None, 0.99)
+        "tools": [{"name": "draw_sprite"}]}}, game_id="g1", build_id="b1", model="qwen-flash-next")
+    workers.worker_created("w1", None, "llm", None, 0.99, model="qwen-flash-next")
     jobs.claim_job("llm", "w1", 60)
     reply = {"choices": [{"message": {"role": "assistant", "content": "I'll create a space game",
                                       "tool_calls": [{"id": "c1", "type": "function", "function": {
@@ -223,8 +228,8 @@ def test_a_responses_wire_turn_elides_to_the_same_fields():
     job_id = jobs.enqueue_job("llm", {"body": {
         "model": "m", "max_output_tokens": 900, "reasoning": {"effort": "low"},
         "instructions": "sys", "input": [{"type": "message", "role": "user", "content": "hi"}]}},
-        game_id="g1", build_id="b1")
-    workers.worker_created("w1", None, "llm", None, 0.99)
+        game_id="g1", build_id="b1", model="qwen-flash-next")
+    workers.worker_created("w1", None, "llm", None, 0.99, model="qwen-flash-next")
     jobs.claim_job("llm", "w1", 60)
     jobs.complete_job(job_id, "w1", {"output": [{"type": "function_call", "name": "write",
                                                   "arguments": "{}"}], "status": "completed",
@@ -259,7 +264,7 @@ def test_an_art_row_keeps_its_prompt_and_render_record_and_drops_the_blobs():
 def _enqueue_llm_turn(build_id="b1", stage="build"):
     body = {"model": "qwen", "messages": [{"role": "user", "content": "Make a space game " * 40}]}
     return jobs.enqueue_job("llm", {"body": body}, game_id="g1", build_id=build_id,
-                             metadata={"stage": stage, "run_id": "g1", "build_id": build_id})
+                             metadata={"stage": stage, "run_id": "g1", "build_id": build_id}, model="qwen-flash-next")
 
 
 def _payload_of(job_id):

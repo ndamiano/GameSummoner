@@ -95,7 +95,7 @@ def test_the_first_turn_sends_the_request_then_the_seeded_opening_run_for_real(t
     cursor = _cursor()
     spec = {"request": "a card game", "design": {"look": "inky woodcut", "audio": "lute",
                                                  "mechanics": ["draw five cards a turn"]}}
-    out = build_steps.step(spec, tmp_path, tools, cursor, {})
+    out = build_steps.step("qwen-flash-next", spec, tmp_path, tools, cursor, {})
     assert isinstance(out, build_steps.Infer)
     sent = out.messages[1:]
     assert [m["role"] for m in sent] == ["user", "assistant", "tool", "assistant", "tool", "user"]
@@ -109,7 +109,7 @@ def test_the_first_turn_sends_the_request_then_the_seeded_opening_run_for_real(t
 
 def test_fix_note_replaces_the_request(tmp_path, tools):
     cursor = _cursor(request="the player cannot move")
-    out = build_steps.step({"request": "a card game"}, tmp_path, tools, cursor, {})
+    out = build_steps.step("qwen-flash-next", {"request": "a card game"}, tmp_path, tools, cursor, {})
     assert out.messages[1]["content"] == "the player cannot move"
     assert out.messages[-1]["content"] == build_steps._nudge_after_seed()
 
@@ -117,7 +117,7 @@ def test_fix_note_replaces_the_request(tmp_path, tools):
 def test_the_seeded_opening_stays_right_after_the_request_through_compaction(tmp_path, tools):
     (tmp_path / "game" / "game.js").write_text("x")
     cursor = _cursor()
-    build_steps.step({"request": "make a game"}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {"request": "make a game"}, tmp_path, tools, cursor, {})
     seeded = cursor.history[1:6]
     cursor.history += _history()[1:]
     assert build_steps.compact(tmp_path, cursor, keep_chars=1200) > 0
@@ -128,16 +128,16 @@ def test_the_seeded_opening_stays_right_after_the_request_through_compaction(tmp
 
 def test_done_ends_the_build(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    out = build_steps.step({}, tmp_path, tools, cursor, _reply(code='done(summary="shipped")'))
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(code='done(summary="shipped")'))
     assert isinstance(out, build_steps.Done)
     assert cursor.finished is True and "shipped" in out.report
 
 
 def test_tool_call_lands_on_disk_and_continues(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    out = build_steps.step({}, tmp_path, tools, cursor,
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor,
                            _reply(code='write_file(path="index.html", content="<h1>hi</h1>")'))
     assert isinstance(out, build_steps.Infer)
     assert (tmp_path / "game" / "index.html").read_text() == "<h1>hi</h1>"
@@ -146,20 +146,20 @@ def test_tool_call_lands_on_disk_and_continues(tmp_path, tools):
 
 def test_the_step_report_says_what_the_turn_did(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    out = build_steps.step({}, tmp_path, tools, cursor, _reply(code=(
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(code=(
         'write_file(path="index.html", content="<h1>hi</h1>")\n'
         'read_file(path="index.html")')))
     assert out.report == "wrote index.html, read index.html"
 
-    out2 = build_steps.step({}, tmp_path, tools, cursor, _reply(code="list_files()"))
+    out2 = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(code="list_files()"))
     assert out2.report == "listed files"
 
 
 def test_the_report_folds_a_program_that_touched_many_files(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    out = build_steps.step({}, tmp_path, tools, cursor, _reply(code=(
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(code=(
         "for i in range(6):\n"
         '    write_file(path=f"f{i}.js", content="x")')))
     assert out.report == "wrote 6 files"
@@ -167,46 +167,46 @@ def test_the_report_folds_a_program_that_touched_many_files(tmp_path, tools):
 
 def test_a_failed_tool_call_reports_its_reason(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    out = build_steps.step({}, tmp_path, tools, cursor,
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor,
                            _reply(code='read_file(path="nope.js")'))
     assert out.report == "read nope.js — failed"
 
 
 def test_the_opening_turn_says_the_prompt_went_out(tmp_path, tools):
     cursor = _cursor()
-    out = build_steps.step({"request": "make a snake game"}, tmp_path, tools, cursor, {})
+    out = build_steps.step("qwen-flash-next", {"request": "make a snake game"}, tmp_path, tools, cursor, {})
     assert out.report == "sent the prompt: make a snake game"
 
 
 def test_the_opening_line_of_a_fix_carries_the_note(tmp_path, tools):
     cursor = _cursor(kind="fix", request="the snake never dies")
-    out = build_steps.step({}, tmp_path, tools, cursor, {})
+    out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     assert out.report == "sent the fix note: the snake never dies"
 
 
 def test_a_long_prompt_is_clipped_in_the_feed(tmp_path, tools):
     cursor = _cursor()
-    out = build_steps.step({"request": "word " * 200}, tmp_path, tools, cursor, {})
+    out = build_steps.step("qwen-flash-next", {"request": "word " * 200}, tmp_path, tools, cursor, {})
     assert out.report.startswith("sent the prompt: word word")
     assert out.report.endswith("…") and len(out.report) < 340
 
 
 def test_a_turn_with_no_tool_call_says_so(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    out = build_steps.step({}, tmp_path, tools, cursor, _reply(content="thinking out loud"))
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(content="thinking out loud"))
     assert out.report == "no tool call — asked again"
 
 
 def test_no_result_re_asks_instead_of_inventing_an_empty_turn(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    build_steps.step({}, tmp_path, tools, cursor,
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor,
                      _reply(code='write_file(path="index.html", content="<h1>hi</h1>")'))
     before, turn = list(cursor.history), cursor.turn
 
-    out = build_steps.step({}, tmp_path, tools, cursor, None)
+    out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, None)
 
     assert isinstance(out, build_steps.Infer)
     assert cursor.history == before and cursor.turn == turn
@@ -215,8 +215,8 @@ def test_no_result_re_asks_instead_of_inventing_an_empty_turn(tmp_path, tools):
 
 def test_a_long_done_summary_is_cut_on_a_word_boundary(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    out = build_steps.step({}, tmp_path, tools, cursor, _reply(
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(
         code='done(summary="' + "built the thing " * 60 + '")'))
     assert isinstance(out, build_steps.Done)
     assert cursor.summary.endswith("…")
@@ -226,9 +226,9 @@ def test_a_long_done_summary_is_cut_on_a_word_boundary(tmp_path, tools):
 
 def test_a_truncated_reply_is_thrown_away_and_the_turn_sent_again(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     before = [dict(m) for m in cursor.history]
-    outcome = build_steps.step({}, tmp_path, tools, cursor,
+    outcome = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor,
                                _reply(content="const x = ",
                                       usage={"completion_tokens": cursor.out_cap}))
     assert isinstance(outcome, build_steps.Infer)
@@ -237,11 +237,11 @@ def test_a_truncated_reply_is_thrown_away_and_the_turn_sent_again(tmp_path, tool
 
 
 def test_a_cut_off_turn_is_re_sent_with_the_window_compacted(tmp_path, tools, monkeypatch):
-    monkeypatch.setattr(build_steps, "_n_ctx", lambda: 131_072)
+    monkeypatch.setattr(build_steps, "_n_ctx", lambda model: 131_072)
     cursor = _cursor(started=True, system="s", history=_history(), prompt_tokens=100_000,
                      chars_per_token=3.0, logged=13)
-    small = build_steps._infer(tmp_path, cursor).max_tokens
-    outcome = build_steps.step({}, tmp_path, tools, cursor,
+    small = build_steps._infer(tmp_path, cursor, 131_072).max_tokens
+    outcome = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor,
                                _reply(content="const x = ",
                                       usage={"prompt_tokens": 100_000, "completion_tokens": small}))
     assert isinstance(outcome, build_steps.Infer)
@@ -251,9 +251,9 @@ def test_a_cut_off_turn_is_re_sent_with_the_window_compacted(tmp_path, tools, mo
 
 def test_the_build_gives_up_after_repeated_cut_offs(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     for _ in range(build_steps._NO_CALL_GIVE_UP):
-        outcome = build_steps.step({}, tmp_path, tools, cursor,
+        outcome = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor,
                                    _reply(content="const x = ",
                                           usage={"completion_tokens": cursor.out_cap}))
     assert isinstance(outcome, build_steps.Done)
@@ -270,8 +270,8 @@ def _raw_reply(raw_args):
 
 def test_a_call_cut_off_mid_argument_says_so_and_writes_nothing(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    build_steps.step({}, tmp_path, tools, cursor,
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor,
                      _raw_reply('{"code":"write_file(path=\\"story.js\\", content=\\"const '))
     said = cursor.history[-1]["content"]
     assert "output token limit" in said and "nothing ran" in said
@@ -281,8 +281,8 @@ def test_a_call_cut_off_mid_argument_says_so_and_writes_nothing(tmp_path, tools)
 
 def test_a_call_that_takes_no_arguments_is_not_read_as_cut_off(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    build_steps.step({}, tmp_path, tools, cursor,
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor,
                      _raw_reply(json.dumps({"code": "print(len(list_files()))"})))
     said = cursor.history[-1]["content"]
     assert "output token limit" not in said
@@ -291,8 +291,8 @@ def test_a_call_that_takes_no_arguments_is_not_read_as_cut_off(tmp_path, tools):
 
 def test_a_turn_the_server_refused_is_not_a_turn_that_said_nothing(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    out = build_steps.step({}, tmp_path, tools, cursor, {},
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {},
                            error="Status 500: Failed to parse tool call arguments as JSON")
     assert isinstance(out, build_steps.Infer)
     said = cursor.history[-1]["content"]
@@ -304,44 +304,44 @@ def test_a_turn_the_server_refused_is_not_a_turn_that_said_nothing(tmp_path, too
 
 def test_a_refused_error_is_clipped_before_it_reaches_the_transcript(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    build_steps.step({}, tmp_path, tools, cursor, {}, error="Status 500: " + "x" * 50_000)
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {}, error="Status 500: " + "x" * 50_000)
     assert len(cursor.history[-1]["content"]) < 1000
 
 
 def test_a_build_the_server_keeps_refusing_gives_up(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     out = None
     for _ in range(build_steps._NO_CALL_GIVE_UP):
-        out = build_steps.step({}, tmp_path, tools, cursor, {}, error="Status 500: nope")
+        out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {}, error="Status 500: nope")
     assert isinstance(out, build_steps.Done) and "could not read" in out.report
 
 
 def test_a_landed_turn_after_a_refusal_clears_the_streak(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    build_steps.step({}, tmp_path, tools, cursor, {}, error="Status 500: nope")
-    build_steps.step({}, tmp_path, tools, cursor, _reply(code="list_files()"))
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {}, error="Status 500: nope")
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(code="list_files()"))
     assert cursor.no_call_streak == 0
 
 
 def test_the_cursor_cap_ends_the_build(tmp_path, tools):
     cursor = _cursor()
     cursor.max_steps = 500
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     cursor.turn = 499
-    out = build_steps.step({}, tmp_path, tools, cursor, _reply(content="thinking"))
+    out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(content="thinking"))
     assert isinstance(out, build_steps.Done) and "500-turn cap" in out.report
     cursor.turn, cursor.max_steps = 499, 1000
-    assert isinstance(build_steps.step({}, tmp_path, tools, cursor, _reply(content="more")),
+    assert isinstance(build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(content="more")),
                       build_steps.Infer)
 
 
 def test_no_tool_call_is_nudged_not_failed(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    out = build_steps.step({}, tmp_path, tools, cursor, _reply(content="I will now write it."))
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(content="I will now write it."))
     assert isinstance(out, build_steps.Infer)
     assert "Keep going" in cursor.history[-1]["content"]
 
@@ -352,8 +352,8 @@ _QUOTED = "function f() {\n  el.innerHTML = '<div style=\"color:#888\">?</div>';
 def test_a_read_reaches_the_program_as_the_file_itself(tmp_path, tools):
     (tmp_path / "game" / "game.js").write_text(_QUOTED, encoding="utf-8")
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    out = build_steps.step({}, tmp_path, tools, cursor, _reply(code=(
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(code=(
         'src = read_file(path="game.js")\n'
         'line = src.splitlines()[1]\n'
         'print(edit_file(path="game.js", old_text=line, new_text="  el.innerHTML = \'x\';"))\n'
@@ -365,8 +365,8 @@ def test_a_read_reaches_the_program_as_the_file_itself(tmp_path, tools):
 def test_only_what_the_program_prints_reaches_the_transcript(tmp_path, tools):
     (tmp_path / "game" / "big.js").write_text("y" * 50_000, encoding="utf-8")
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    build_steps.step({}, tmp_path, tools, cursor, _reply(code=(
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(code=(
         'src = read_file(path="big.js")\n'
         'print("big.js is", len(src), "chars")')))
     said = cursor.history[-1]["content"]
@@ -377,16 +377,16 @@ def test_only_what_the_program_prints_reaches_the_transcript(tmp_path, tools):
 def test_a_whole_file_reaches_the_program_however_long(tmp_path, tools):
     (tmp_path / "game" / "big.js").write_text("z" * 300_000, encoding="utf-8")
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    build_steps.step({}, tmp_path, tools, cursor,
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor,
                      _reply(code='print(len(read_file(path="big.js")))'))
     assert cursor.history[-1]["content"].startswith("300000")
 
 
 def test_a_failed_call_returns_its_error_and_the_program_carries_on(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    build_steps.step({}, tmp_path, tools, cursor, _reply(code=(
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(code=(
         'print("first:", read_file(path="nope.js")[:6])\n'
         'write_file(path="after.js", content="// still ran")\n'
         'print("second write happened")')))
@@ -397,8 +397,8 @@ def test_a_failed_call_returns_its_error_and_the_program_carries_on(tmp_path, to
 
 def test_the_result_lists_the_calls_and_names_the_ones_that_failed(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    build_steps.step({}, tmp_path, tools, cursor, _reply(code=(
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(code=(
         'write_file(path="a.js", content="1")\n'
         'edit_file(path="a.js", old_text="nope", new_text="x")')))
     said = cursor.history[-1]["content"]
@@ -410,8 +410,8 @@ def test_the_result_lists_the_calls_and_names_the_ones_that_failed(tmp_path, too
 
 def test_a_program_that_reaches_outside_the_session_is_refused_before_it_runs(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    out = build_steps.step({}, tmp_path, tools, cursor, _reply(code=(
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(code=(
         'import subprocess\n'
         'write_file(path="never.js", content="x")')))
     said = cursor.history[-1]["content"]
@@ -422,8 +422,8 @@ def test_a_program_that_reaches_outside_the_session_is_refused_before_it_runs(tm
 
 def test_only_the_first_program_of_a_reply_runs(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    build_steps.step({}, tmp_path, tools, cursor, _reply(programs=[
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(programs=[
         'write_file(path="one.js", content="1")',
         'write_file(path="two.js", content="2")']))
     assert (tmp_path / "game" / "one.js").exists()
@@ -433,13 +433,13 @@ def test_only_the_first_program_of_a_reply_runs(tmp_path, tools):
 
 def _fail(tmp_path, tools, cursor, code, times):
     for _ in range(times):
-        build_steps.step({}, tmp_path, tools, cursor, _reply(code=code))
+        build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(code=code))
     return cursor.history[-1]["content"]
 
 
 def test_an_identical_failing_call_is_told_it_is_repeating(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     prog = 'edit_file(path="game.js", old_text="a", new_text="b")'
     assert "sent this exact program" not in _fail(tmp_path, tools, cursor, prog, 1)
     assert "sent this exact program 2 times" in _fail(tmp_path, tools, cursor, prog, 1)
@@ -449,7 +449,7 @@ def test_an_identical_failing_call_is_told_it_is_repeating(tmp_path, tools):
 def test_a_succeeding_call_between_retries_does_not_reset_the_count(tmp_path, tools):
     (tmp_path / "game" / "game.js").write_text("hello\n", encoding="utf-8")
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     prog = 'edit_file(path="game.js", old_text="nope", new_text="b")'
     for _ in range(3):
         _fail(tmp_path, tools, cursor, 'read_file(path="game.js")', 1)
@@ -459,14 +459,14 @@ def test_a_succeeding_call_between_retries_does_not_reset_the_count(tmp_path, to
 
 def test_the_repeat_note_keeps_the_reason_the_call_failed(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     content = _fail(tmp_path, tools, cursor, 'print(read_file(path="nope.js"))', 2)
     assert "no such file" in content and "2 times" in content
 
 
 def test_a_changed_argument_is_not_a_repeat(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     _fail(tmp_path, tools, cursor, 'read_file(path="nope.js")', 1)
     content = _fail(tmp_path, tools, cursor, 'read_file(path="other.js")', 1)
     assert "sent this exact program" not in content
@@ -474,10 +474,10 @@ def test_a_changed_argument_is_not_a_repeat(tmp_path, tools):
 
 def test_the_repeat_note_stays_out_of_the_build_feed(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     prog = 'read_file(path="nope.js")'
-    build_steps.step({}, tmp_path, tools, cursor, _reply(code=prog))
-    out = build_steps.step({}, tmp_path, tools, cursor, _reply(code=prog))
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(code=prog))
+    out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(code=prog))
     assert "sent this exact program" not in out.report
 
 
@@ -491,8 +491,8 @@ def test_generate_media_reaches_the_tool_and_its_path_reaches_the_transcript(tmp
     (tmp_path / "game").mkdir()
     cursor = _cursor()
     spy_tools = {"generate_media": _spy}
-    build_steps.step({}, tmp_path, spy_tools, cursor, {})
-    build_steps.step({}, tmp_path, spy_tools, cursor, _reply(code=(
+    build_steps.step("qwen-flash-next", {}, tmp_path, spy_tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, spy_tools, cursor, _reply(code=(
         'print(generate_media(id="goblin", subject="a snarling goblin", kind="mesh"))')))
     assert seen == {"id": "goblin", "subject": "a snarling goblin", "kind": "mesh"}
     assert "assets/goblin.glb" in cursor.history[-1]["content"]
@@ -757,9 +757,9 @@ def test_compaction_replays_the_trim_from_the_turn_log(tmp_path):
 
 def test_a_turns_thinking_rides_the_transcript(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    build_steps.step({}, tmp_path, tools, cursor, _reply(code="print(1)", reasoning="plan it"))
-    build_steps.step({}, tmp_path, tools, cursor, _reply(content="hm", reasoning="no call"))
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(code="print(1)", reasoning="plan it"))
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(content="hm", reasoning="no call"))
     replies = [m for m in cursor.history if m["role"] == "assistant" and not build_steps.is_seed(m)]
     assert [m["reasoning_content"] for m in replies] == ["plan it", "no call"]
 
@@ -778,10 +778,10 @@ def test_compaction_drops_every_turns_thinking(tmp_path):
 
 def test_replies_cut_off_at_the_cap_count_toward_the_stall(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     out = None
     for _ in range(build_steps._NO_CALL_GIVE_UP):
-        out = build_steps.step({}, tmp_path, tools, cursor,
+        out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor,
                                _reply(content="const x = ",
                                       usage={"completion_tokens": cursor.out_cap}))
     assert isinstance(out, build_steps.Done) and "stalled" in out.report
@@ -789,19 +789,19 @@ def test_replies_cut_off_at_the_cap_count_toward_the_stall(tmp_path, tools):
 
 def test_a_turn_re_sent_forever_ends_the_build(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     out = None
     for _ in range(build_steps._REDRIVE_GIVE_UP):
-        out = build_steps.step({}, tmp_path, tools, cursor, None)
+        out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, None)
     assert isinstance(out, build_steps.Done) and "never ran" in out.report
 
 
 def test_the_last_nudge_never_tells_a_fix_to_write_a_fresh_page(tmp_path, tools):
     (tmp_path / "game" / "index.html").write_text("<h1>done</h1>")
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     for _ in range(3):
-        build_steps.step({}, tmp_path, tools, cursor, _reply(content="hmm"))
+        build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(content="hmm"))
     said = cursor.history[-1]["content"]
     assert "index.html" not in said and "edits it" in said
     assert (tmp_path / "game" / "index.html").read_text() == "<h1>done</h1>"
@@ -809,8 +809,8 @@ def test_the_last_nudge_never_tells_a_fix_to_write_a_fresh_page(tmp_path, tools)
 
 def test_a_misnamed_argument_is_named_back(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    build_steps.step({}, tmp_path, tools, cursor,
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor,
                      _reply(code='print(read_file(file="lib/input.js"))'))
     said = cursor.history[-1]["content"]
     assert "KeyError" not in said
@@ -818,12 +818,12 @@ def test_a_misnamed_argument_is_named_back(tmp_path, tools):
 
 
 def test_the_output_cap_is_the_ceiling_until_a_turn_overruns_it(tmp_path, tools, monkeypatch):
-    monkeypatch.setattr(build_steps, "_n_ctx", lambda: 131_072)
+    monkeypatch.setattr(build_steps, "_n_ctx", lambda model: 131_072)
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     assert cursor.out_cap == build_steps._OUT_CAP
 
-    outcome = build_steps.step({}, tmp_path, tools, cursor,
+    outcome = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor,
                                _reply(content="const x = ",
                                       usage={"completion_tokens": cursor.out_cap}))
     assert isinstance(outcome, build_steps.Infer)
@@ -832,44 +832,44 @@ def test_the_output_cap_is_the_ceiling_until_a_turn_overruns_it(tmp_path, tools,
 
 def test_a_turn_that_merely_called_no_tool_does_not_earn_the_whole_window(tmp_path, tools,
                                                                           monkeypatch):
-    monkeypatch.setattr(build_steps, "_n_ctx", lambda: 131_072)
+    monkeypatch.setattr(build_steps, "_n_ctx", lambda model: 131_072)
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    build_steps.step({}, tmp_path, tools, cursor,
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor,
                      _reply(content="thinking out loud, no call", usage={"completion_tokens": 40}))
     assert cursor.out_cap == build_steps._OUT_CAP
 
 
 def test_the_cap_never_exceeds_what_the_window_has_left(tmp_path, tools, monkeypatch):
-    monkeypatch.setattr(build_steps, "_n_ctx", lambda: 131_072)
+    monkeypatch.setattr(build_steps, "_n_ctx", lambda model: 131_072)
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     cursor.logged = len(cursor.history)
-    build_steps.step({}, tmp_path, tools, cursor,
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor,
                      _reply(code=f'write_file(path="a.js", content={"z" * 3000!r})',
                             usage={"prompt_tokens": 110_000}))
     assert 131_072 - 110_000 - 1200 < cursor.out_cap < 131_072 - 110_000 - 1000
 
 
 def test_compaction_fires_when_the_window_has_less_than_the_room_left(tmp_path, tools, monkeypatch):
-    monkeypatch.setattr(build_steps, "_n_ctx", lambda: 131_072)
+    monkeypatch.setattr(build_steps, "_n_ctx", lambda model: 131_072)
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     cursor.history = _file_history()
     cursor.logged = len(cursor.history)
     cursor.prompt_tokens = 131_072 - build_steps._COMPACT_ROOM - 1
-    build_steps._infer(tmp_path, cursor)
+    build_steps._infer(tmp_path, cursor, 131_072)
     assert cursor.compacted == 0
     cursor.prompt_tokens = 131_072 - build_steps._COMPACT_ROOM + 1
-    build_steps._infer(tmp_path, cursor)
+    build_steps._infer(tmp_path, cursor, 131_072)
     assert cursor.compacted == 1
 
 
 def test_the_server_count_sets_the_chars_per_token(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     sent = len(cursor.system) + sum(len(json.dumps(m)) for m in cursor.history)
-    build_steps.step({}, tmp_path, tools, cursor,
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor,
                      _reply(code="print(1)", usage={"prompt_tokens": 1000}))
     assert cursor.chars_per_token == sent / 1000
 
@@ -897,8 +897,8 @@ def test_the_compaction_note_carries_the_code_map(tmp_path):
 
 def test_a_program_with_hundreds_of_calls_reports_a_readable_ledger(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    build_steps.step({}, tmp_path, tools, cursor, _reply(code=(
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(code=(
         "for i in range(60):\n"
         '    write_file(path=f"f{i}.js", content="x")')))
     said = cursor.history[-1]["content"]
@@ -908,8 +908,8 @@ def test_a_program_with_hundreds_of_calls_reports_a_readable_ledger(tmp_path, to
 
 def test_the_feed_line_folds_failures_too(tmp_path, tools):
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    out = build_steps.step({}, tmp_path, tools, cursor, _reply(code=(
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(code=(
         "for i in range(22):\n"
         '    edit_file(path=f"gone{i}.js", old_text="a", new_text="b")')))
     assert out.report == "edited 22 files — all failed"
@@ -925,23 +925,23 @@ def _fat_history(rounds=40, body=6000):
 
 
 def test_compaction_fires_on_the_round_that_jumps_the_window(tmp_path, tools, monkeypatch):
-    monkeypatch.setattr(build_steps, "_n_ctx", lambda: 131_072)
+    monkeypatch.setattr(build_steps, "_n_ctx", lambda model: 131_072)
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     cursor.history = _fat_history()
     cursor.logged = 1
     cursor.prompt_tokens = 100_000
-    build_steps._infer(tmp_path, cursor)
+    build_steps._infer(tmp_path, cursor, 131_072)
     assert cursor.compacted == 1
 
 
 def test_a_prompt_over_the_window_is_trimmed_and_re_sent(tmp_path, tools, monkeypatch):
-    monkeypatch.setattr(build_steps, "_n_ctx", lambda: 131_072)
+    monkeypatch.setattr(build_steps, "_n_ctx", lambda model: 131_072)
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     cursor.history = _fat_history()
     cursor.logged = 1
-    out = build_steps.step({}, tmp_path, tools, cursor, None,
+    out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, None,
                            error='Status 400: {"error":{"code":"context_length_exceeded",'
                                  '"message":"prepared prompt has 131453 tokens, exceeding Engine '
                                  'max_context 131072"}}')
@@ -952,32 +952,32 @@ def test_a_prompt_over_the_window_is_trimmed_and_re_sent(tmp_path, tools, monkey
 
 
 def test_the_build_gives_up_when_the_prompt_cannot_be_trimmed(tmp_path, tools, monkeypatch):
-    monkeypatch.setattr(build_steps, "_n_ctx", lambda: 131_072)
+    monkeypatch.setattr(build_steps, "_n_ctx", lambda model: 131_072)
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
-    out = build_steps.step({}, tmp_path, tools, cursor, None,
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+    out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, None,
                            error='Status 400: max_tokens must be positive')
     assert isinstance(out, build_steps.Done)
     assert "nothing is left to trim" in out.report
 
 
 def test_the_cap_stays_positive_when_the_window_is_full(tmp_path, tools, monkeypatch):
-    monkeypatch.setattr(build_steps, "_n_ctx", lambda: 131_072)
+    monkeypatch.setattr(build_steps, "_n_ctx", lambda model: 131_072)
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     cursor.history = _fat_history()
     cursor.logged = 1
     cursor.prompt_tokens = 130_000
-    build_steps._infer(tmp_path, cursor)
+    build_steps._infer(tmp_path, cursor, 131_072)
     assert cursor.out_cap > 0
 
 
 def test_the_compaction_note_says_what_is_already_read_and_unchanged(tmp_path, tools, monkeypatch):
-    monkeypatch.setattr(build_steps, "_n_ctx", lambda: 131_072)
+    monkeypatch.setattr(build_steps, "_n_ctx", lambda model: 131_072)
     (tmp_path / "game" / "main.js").write_text("const a = 1;\n", encoding="utf-8")
     tools["read_file"](path="main.js")
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     cursor.history = _file_history()
     build_steps.compact(tmp_path, cursor, keep_chars=1200)
     note = cursor.history[1]["content"]
@@ -986,7 +986,7 @@ def test_the_compaction_note_says_what_is_already_read_and_unchanged(tmp_path, t
 
 
 def test_dedup_alone_can_be_enough_and_the_older_bodies_stay(tmp_path, tools, monkeypatch):
-    monkeypatch.setattr(build_steps, "_n_ctx", lambda: 131_072)
+    monkeypatch.setattr(build_steps, "_n_ctx", lambda model: 131_072)
     cursor = _cursor()
     body = "z" * 9000
     cursor.history = [{"role": "user", "content": "make a game"}]
@@ -1003,21 +1003,21 @@ def test_dedup_alone_can_be_enough_and_the_older_bodies_stay(tmp_path, tools, mo
 
 
 def test_a_transcript_over_the_window_never_asks_for_a_negative_reply(tmp_path, tools, monkeypatch):
-    monkeypatch.setattr(build_steps, "_n_ctx", lambda: 131_072)
+    monkeypatch.setattr(build_steps, "_n_ctx", lambda model: 131_072)
     monkeypatch.setattr(build_steps, "compact", lambda *a, **k: False)
     cursor = _cursor()
     cursor.prompt_tokens = 200_000
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     assert cursor.out_cap >= build_steps._MIN_OUT
 
 
 def test_a_full_window_retry_is_positive_too(tmp_path, tools, monkeypatch):
-    monkeypatch.setattr(build_steps, "_n_ctx", lambda: 131_072)
+    monkeypatch.setattr(build_steps, "_n_ctx", lambda model: 131_072)
     monkeypatch.setattr(build_steps, "compact", lambda *a, **k: False)
     cursor = _cursor()
-    build_steps.step({}, tmp_path, tools, cursor, {})
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
     cursor.prompt_tokens = 200_000
-    build_steps.step({}, tmp_path, tools, cursor,
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor,
                      _reply(content="const x = ", usage={"completion_tokens": cursor.out_cap}))
     assert cursor.out_cap >= build_steps._MIN_OUT
 

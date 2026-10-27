@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from threading import Lock
 from typing import Any, Dict
@@ -16,6 +17,37 @@ def _merge(defaults: Dict[str, Any], loaded: Dict[str, Any]) -> Dict[str, Any]:
         base = out.get(k)
         out[k] = {**base, **v} if isinstance(base, dict) and isinstance(v, dict) else v
     return out
+
+
+_ENTRY_NAME = re.compile(r"[a-z0-9.-]{1,32}")
+_KINDS = ("self_hosted", "api", "local_gpu")
+_PROVIDERS = {"runpod", "aws"}
+_PRICES = ("input", "cached_input", "output")
+
+
+def validate_llm(llm: Dict[str, Any]) -> None:
+    for name, entry in llm.items():
+        where = f"settings llm.{name}"
+        if not _ENTRY_NAME.fullmatch(name):
+            raise ValueError(f"{where}: a name is [a-z0-9.-], at most 32 characters")
+        if not isinstance(entry, dict):
+            raise ValueError(f"{where}: an entry is an object")
+        if not entry.get("model") or not entry.get("n_ctx"):
+            raise ValueError(f"{where}: needs model and n_ctx")
+        kinds = [k for k in _KINDS if k in entry]
+        if len(kinds) != 1:
+            raise ValueError(f"{where}: needs exactly one of {', '.join(_KINDS)}, has {kinds}")
+        if "self_hosted" in entry:
+            unknown = set((entry["self_hosted"].get("providers") or {})) - _PROVIDERS
+            if unknown:
+                raise ValueError(f"{where}: unknown providers {sorted(unknown)}")
+        if "api" in entry:
+            api = entry["api"]
+            prices = api.get("usd_per_mtok") or {}
+            if not api.get("base_url") or any(
+                    not isinstance(prices.get(k), (int, float)) for k in _PRICES):
+                raise ValueError(f"{where}: an api entry needs base_url and usd_per_mtok "
+                                 f"{{{', '.join(_PRICES)}}}")
 
 
 class SettingsManager:
@@ -39,17 +71,13 @@ class SettingsManager:
         self.defaults = {
             "working_directory": default_working_dir,
             "data_dir": default_data_dir,
-            "llm": {
-                "model": os.getenv("LLM_MODEL", "local-model"),
-                # Reaches the engine as `reasoning_effort`, so "none" DISABLES thinking — and a
-                # build without thinking makes "something kinda close" (docs/experiments.md).
-                "reasoning": os.getenv("LLM_REASONING", "medium"),
-                "max_tokens": 50000,
-                "basalt_args": os.getenv("BASALT_ARGS", ""),
-                # Jobs one llm worker runs at once; the pod's engine batches them. The scaler
-                # counts workers, not slots, so depth_per_worker and max age scale with it.
-                "slots": int(os.getenv("LLM_SLOTS", "1")),
-                "n_ctx": int(os.getenv("LLM_N_CTX", "32768"))
+            "llm": {},
+            "scaler": {
+                "tick_seconds": 15,
+                "stale_worker_seconds": 180,
+                "max_workers": 3,
+                "min_jobs_per_pod": 6,
+                "cooldown_seconds": 300
             },
             "workqueue": {
                 "token": os.getenv("WORKQUEUE_TOKEN", ""),
@@ -78,8 +106,6 @@ class SettingsManager:
                 "network_volume_id": "",
                 "cloud_type": "SECURE",
                 "cp_url": "",
-                "tick_seconds": 15,
-                "stale_worker_seconds": 180,
                 "queues": {}
             },
             "aws": {
@@ -93,6 +119,7 @@ class SettingsManager:
         }
 
         self._settings = self._load_settings()
+        validate_llm(self._settings["llm"])
 
     def _load_settings(self) -> Dict[str, Any]:
         try:

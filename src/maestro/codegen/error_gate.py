@@ -186,7 +186,7 @@ def _targets(png: bytes) -> Optional[List[tuple]]:
                {"type": "image_url", "image_url": {
                    "url": "data:image/png;base64," + base64.b64encode(png).decode()}}]
     try:
-        reply = get_connector().generate_with_tools(
+        reply = get_connector("qwen-flash-next").generate_with_tools(
             MessageBuilder("You read screenshots of browser games.").add_user(content).build(),
             [], max_tokens=4000, reasoning="low")
         msg = (reply.get("choices") or [{}])[0].get("message", {}) or {}

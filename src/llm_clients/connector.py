@@ -7,8 +7,9 @@ knows or cares which engine is behind a queue — adding one is a worker change.
 
 import logging
 import time
-from typing import Optional
+from typing import Dict, Optional
 
+from config import llm_models
 from config.settings_manager import settings_manager
 from llm_clients.rate_limiter import get_llm_rate_limiter
 from workqueue import client as queue_client
@@ -38,24 +39,28 @@ def _resolve_effort(value):
 
 
 class LLMConnector:
-    def __init__(self, model: str = "default", max_tokens: Optional[int] = 50000,
+    def __init__(self, entry: str, model: str, n_ctx: int, max_tokens: Optional[int] = 50000,
                  reasoning: Optional[str] = None,
                  queue: str = "llm", job_timeout_seconds: float = 900):
+        self.entry = entry
         self.model_name = model
+        self.n_ctx = n_ctx
         self.max_tokens = max_tokens
         # Reasoning-effort for reasoning models, sent as reasoning.effort. "none" disables
         # reasoning; None lets the model pick. on/off aliased to the effort enum.
         self.reasoning = _resolve_effort(reasoning)
         self.queue = queue
         self.job_timeout_seconds = job_timeout_seconds
-        self._context_length: Optional[int] = None
 
-    def get_context_length(self) -> Optional[int]:
-        """No server to ask — the configured window (llm.n_ctx) is the answer."""
-        if self._context_length is None:
-            n_ctx = (settings_manager.get_settings().get("llm") or {}).get("n_ctx")
-            self._context_length = int(n_ctx) if n_ctx else None
-        return self._context_length
+    @classmethod
+    def for_entry(cls, name: str, **overrides) -> "LLMConnector":
+        entry = llm_models.entry(name)
+        workqueue = settings_manager.get_settings().get("workqueue") or {}
+        return cls(**{"entry": name, "model": entry["model"], "n_ctx": int(entry["n_ctx"]),
+                      "max_tokens": entry.get("max_tokens", 50000),
+                      "reasoning": entry.get("reasoning"),
+                      "job_timeout_seconds": workqueue.get("job_timeout_seconds", 900),
+                      **overrides})
 
     def generate_with_tools(self, messages: list, tools: list = None, max_tokens: int = None,
                             reasoning=_REASONING_UNSET, temperature: float = None) -> dict:
@@ -106,29 +111,18 @@ class LLMConnector:
         'failed' with an error on timeout, so callers have one shape to branch on."""
         return queue_client.run_job(
             self.queue, {"kind": "llm", "body": payload},
-            model=payload.get("model"), timeout_seconds=self.job_timeout_seconds)
+            model=self.entry, timeout_seconds=self.job_timeout_seconds)
 
     def build_llm_job(self, messages: list, tools: list = None, max_tokens: int = None,
                       reasoning=_REASONING_UNSET) -> tuple:
-        """Build the (queue payload, model) for one request WITHOUT enqueuing or waiting — the
-        fire-and-forget seam the build chain uses: it lands the job itself (with build metadata) and
-        drives the next turn from the completion, rather than blocking on run_job."""
         body = self._payload(messages, tools, max_tokens, reasoning=reasoning)
-        return {"kind": "llm", "body": body}, body.get("model")
+        return {"kind": "llm", "body": body}, self.entry
 
 
-_cached_connector: Optional[LLMConnector] = None
+_connectors: Dict[str, LLMConnector] = {}
 
 
-def get_connector() -> LLMConnector:
-    global _cached_connector
-    if _cached_connector is None:
-        settings = settings_manager.get_settings()
-        llm = settings.get("llm") or {}
-        workqueue = settings.get("workqueue") or {}
-        _cached_connector = LLMConnector(
-            model=llm.get("model", "default"),
-            max_tokens=llm.get("max_tokens", 50000),
-            reasoning=llm.get("reasoning"),
-            job_timeout_seconds=workqueue.get("job_timeout_seconds", 900))
-    return _cached_connector
+def get_connector(name: str) -> LLMConnector:
+    if name not in _connectors:
+        _connectors[name] = LLMConnector.for_entry(name)
+    return _connectors[name]

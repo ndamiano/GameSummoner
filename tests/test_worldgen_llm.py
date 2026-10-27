@@ -38,7 +38,7 @@ def _reply(content=None, tool_calls=None):
 
 def test_no_tool_call_is_one_round_trip(monkeypatch):
     fake = FakeConnector([_reply("hello there")])
-    monkeypatch.setattr(llm, "_get_connector", lambda: fake)
+    monkeypatch.setattr(llm, "_get_connector", lambda name: fake)
 
     resp = llm.LLMHarness().send_message_with_tools("hi")
 
@@ -65,7 +65,7 @@ def test_tool_loop_dispatches_then_finishes(monkeypatch):
         _reply("done"),
     ]
     fake = FakeConnector(replies)
-    monkeypatch.setattr(llm, "_get_connector", lambda: fake)
+    monkeypatch.setattr(llm, "_get_connector", lambda name: fake)
 
     resp = llm.LLMHarness(tools=[add]).send_message_with_tools("go")
 
@@ -95,7 +95,7 @@ def test_pydantic_tool_argument_is_deserialized(monkeypatch):
         _reply("done"),
     ]
     fake = FakeConnector(replies)
-    monkeypatch.setattr(llm, "_get_connector", lambda: fake)
+    monkeypatch.setattr(llm, "_get_connector", lambda name: fake)
 
     llm.LLMHarness(tools=[add_box]).send_message_with_tools("go")
 
@@ -106,7 +106,7 @@ def test_pydantic_tool_argument_is_deserialized(monkeypatch):
 
 def test_image_parts_reach_the_outgoing_payload(monkeypatch):
     fake = FakeConnector([_reply("ok")])
-    monkeypatch.setattr(llm, "_get_connector", lambda: fake)
+    monkeypatch.setattr(llm, "_get_connector", lambda name: fake)
 
     message = llm.Message("user", [
         {"type": "text", "text": "look at this"},
@@ -126,7 +126,7 @@ def test_transcript_available_on_raw_messages(monkeypatch):
         _reply("all done"),
     ]
     fake = FakeConnector(replies)
-    monkeypatch.setattr(llm, "_get_connector", lambda: fake)
+    monkeypatch.setattr(llm, "_get_connector", lambda name: fake)
 
     @llm.tool
     def finish() -> str:
@@ -154,7 +154,7 @@ def test_temperature_reaches_every_call(monkeypatch):
         _reply("done"),
     ]
     fake = FakeConnector(replies)
-    monkeypatch.setattr(llm, "_get_connector", lambda: fake)
+    monkeypatch.setattr(llm, "_get_connector", lambda name: fake)
 
     llm.LLMHarness(tools=[note], temperature=0.0).send_message_with_tools("go")
 
@@ -163,7 +163,7 @@ def test_temperature_reaches_every_call(monkeypatch):
 
 def test_temperature_omitted_leaves_the_connector_default(monkeypatch):
     fake = FakeConnector([_reply("hi")])
-    monkeypatch.setattr(llm, "_get_connector", lambda: fake)
+    monkeypatch.setattr(llm, "_get_connector", lambda name: fake)
 
     llm.LLMHarness().send_message_with_tools("hi")
 

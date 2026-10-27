@@ -28,6 +28,11 @@ async def _lifespan(app: FastAPI):
     app.state.db_backup.start()
 
     _settings = settings_manager.get_settings()
+    app.state.api_workers = [ApiWorkerProcess(int(os.getenv("PORT", "8000")), name)
+                             for name, entry in _settings["llm"].items() if "api" in entry]
+    for worker in app.state.api_workers:
+        worker.start()
+        logging.info("api worker started for %s", worker.entry)
     _rp, _aws = _settings.get("runpod") or {}, _settings.get("aws") or {}
     _providers = []
     if _rp.get("enabled") and _rp.get("api_key"):
@@ -46,6 +51,8 @@ async def _lifespan(app: FastAPI):
 
     if getattr(app.state, "autoscaler", None):
         app.state.autoscaler.stop()
+    for worker in app.state.api_workers:
+        worker.stop()
     app.state.db_backup.stop()
     app.state.reaper.stop()
     await event_bus.shutdown()
@@ -85,6 +92,7 @@ from auth.deps import install_auth
 from auth.router import router as auth_router
 from config.settings_manager import settings_manager
 from maestro.codegen import build_chain
+from workqueue.api_worker import ApiWorkerProcess
 from workqueue.reaper import Reaper
 from tools.db_backup import DbBackup
 from scaler.autoscaler import Autoscaler

@@ -91,9 +91,27 @@ def test_workers_report_state_and_the_job_they_hold(app_client):
     assert totals["workers_live"] == 2
 
 
+def test_each_llm_entry_is_its_own_row_capped_only_where_the_scaler_rents_for_it(
+        app_client, llm_entries, monkeypatch):
+    from config.settings_manager import settings_manager
+    llm_entries["deepseek-4.1"] = {"model": "d", "n_ctx": 1, "api": {"base_url": "u"}}
+    llm_entries["qwen-flash-next"] = {"model": "q", "n_ctx": 1,
+                                      "self_hosted": {"providers": {"runpod": {}}}}
+    monkeypatch.setitem(settings_manager._settings, "runpod", {"enabled": True, "queues": {}})
+    monkeypatch.setitem(settings_manager._settings, "scaler",
+                        {**settings_manager._settings["scaler"], "max_workers": 4})
+    jobs.enqueue_job("llm", {}, model="deepseek-4.1")
+    token = _token("root", "admin")
+    rows = app_client.get("/api/admin/queues",
+                          headers={"Authorization": f"Bearer {token}"}).json()["queues"]
+    assert [(r["queue"], r["model"], r["pending"], r["workers_max"]) for r in rows] == [
+        ("llm", "qwen-flash-next", 0, 4), ("llm", "deepseek-4.1", 1, 0),
+        ("comfy", None, 0, 0), ("decide", None, 0, 0)]
+
+
 def test_a_created_pod_is_booting_until_its_worker_registers(app_client):
-    workers.worker_created("w-new", "p-new", "llm", None, 1.89)
-    workers.worker_created("w-live", "p-live", "llm", None, 1.89)
+    workers.worker_created("w-new", "p-new", "llm", None, 1.89, model="qwen-flash-next")
+    workers.worker_created("w-live", "p-live", "llm", None, 1.89, model="qwen-flash-next")
     workers.worker_seen("w-live", "llm", gpu_type="BIG", source="runpod")
     llm, _ = _queue(app_client, "llm")
 
@@ -178,9 +196,9 @@ def test_costs_without_a_reachable_ledger_still_reports_our_half(app_client, mon
 
     monkeypatch.setattr(admin, "_ledger", lambda _since, _now: None)
     admin._cost_cache.clear()
-    workers.worker_created("w1", "p1", "llm", "NVIDIA GeForce RTX 5090", 1.0)
+    workers.worker_created("w1", "p1", "llm", "NVIDIA GeForce RTX 5090", 1.0, model="qwen-flash-next")
     workers.worker_seen("w1", "llm", gpu_type="NVIDIA GeForce RTX 5090", source="runpod")
-    jid = jobs.enqueue_job("llm", {"p": 1})
+    jid = jobs.enqueue_job("llm", {"p": 1}, model="qwen-flash-next")
     jobs.claim_job("llm", "w1", lease_seconds=120)
     jobs.complete_job(jid, "w1", {"ok": True}, None, exec_seconds=60)
 
@@ -204,7 +222,7 @@ def test_costs_price_an_ec2_life_at_its_launch_rate_with_no_ledger(app_client, m
     lives = {"w-done": ("eu-north-1/i-done", 1.20, now - 7200, now - 5400),
              "w-live": ("us-west-2/i-live", 3.36, now - 900, None)}
     for worker, (machine, rate, started, ended) in lives.items():
-        workers.worker_created(worker, machine, "llm", "g7e.2xlarge", rate, source="aws")
+        workers.worker_created(worker, machine, "llm", "g7e.2xlarge", rate, source="aws", model="qwen-flash-next")
         with connection.platform_db() as conn:
             conn.execute("UPDATE workers SET started_at = ?, terminated_at = ? WHERE id = ?",
                          (started, ended, worker))

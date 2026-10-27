@@ -410,7 +410,7 @@ def _merge_prompt(original: str, note: str) -> str:
               "does not touch.")
     user = f"ORIGINAL: {original}\n\nCHANGE: {note}"
     try:
-        reply = get_connector().generate_with_tools(
+        reply = get_connector("qwen-flash-next").generate_with_tools(
             MessageBuilder(system).add_user(user).build(), [], max_tokens=300)
         text = ((reply.get("choices") or [{}])[0].get("message", {}) or {}).get("content") or ""
         merged = text.strip().strip('"')

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
+from config import llm_models
 from llm_clients.message_builder import MessageBuilder
 from maestro.codegen import code_map, file_state, turn_log
 from maestro.codegen.build_state import BuildCursor
@@ -84,26 +85,26 @@ PYTHON_SCHEMA = {"type": "function", "function": {
 SCHEMAS = [PYTHON_SCHEMA]
 
 
-def _n_ctx() -> int:
-    from config.settings_manager import settings_manager
-    return int((settings_manager.get_settings().get("llm") or {}).get("n_ctx") or 32768)
+def _n_ctx(model: str) -> int:
+    return int(llm_models.entry(model)["n_ctx"])
 
 
-def step(spec, run_dir, tools, cursor, result, error: Optional[str] = None) -> Outcome:
+def step(model, spec, run_dir, tools, cursor, result, error: Optional[str] = None) -> Outcome:
     """`result` None re-asks the turn, {} is a turn that returned nothing, `error` never arrived."""
+    ctx = _n_ctx(model)
     if not cursor.started:
         cursor.started = True
         cursor.system = (_PROMPTS / "build.txt").read_text(encoding="utf-8")
         cursor.history = [{"role": "user", "content": cursor.request or _request_from(spec)}]
         _seed(tools, cursor, run_dir)
-        return _infer(run_dir, cursor)
+        return _infer(run_dir, cursor, ctx)
 
     if error:
         if any(m in error for m in _PROMPT_REFUSED):
             cursor.turn += 1
             before = cursor.compacted
-            cursor.prompt_tokens = _n_ctx()
-            nxt = _infer(run_dir, cursor, report="the prompt outgrew the window; trimmed it")
+            cursor.prompt_tokens = ctx
+            nxt = _infer(run_dir, cursor, ctx, report="the prompt outgrew the window; trimmed it")
             if cursor.compacted == before:
                 return Done("stalled: the prompt is over the window and nothing is left to trim")
             return nxt
@@ -115,13 +116,14 @@ def step(spec, run_dir, tools, cursor, result, error: Optional[str] = None) -> O
                                f"to parse is the usual cause. {_TOO_BIG}"})
         if cursor.no_call_streak >= _NO_CALL_GIVE_UP:
             return Done(f"stalled: {cursor.no_call_streak} turns the server could not read")
-        return _infer(run_dir, cursor, report=f"turn rejected by the server: {_clip(error, 80)}")
+        return _infer(run_dir, cursor, ctx,
+                      report=f"turn rejected by the server: {_clip(error, 80)}")
 
     if result is None:
         cursor.redriven += 1
         if cursor.redriven >= _REDRIVE_GIVE_UP:
             return Done(f"stalled: {cursor.redriven} turns never ran")
-        return _infer(run_dir, cursor, report="re-sent the turn that never ran")
+        return _infer(run_dir, cursor, ctx, report="re-sent the turn that never ran")
 
     usage = result.get("usage") or {}
     cursor.prompt_tokens = usage.get("prompt_tokens") or cursor.prompt_tokens
@@ -139,8 +141,8 @@ def step(spec, run_dir, tools, cursor, result, error: Optional[str] = None) -> O
         cursor.no_call_streak += 1
         if cursor.no_call_streak >= _NO_CALL_GIVE_UP:
             return Done(f"stalled: {cursor.no_call_streak} turns cut off by the output limit")
-        return _infer(run_dir, cursor, report="the reply ran out of room — sending the turn again",
-                      full_window=True)
+        return _infer(run_dir, cursor, ctx,
+                      report="the reply ran out of room — sending the turn again", full_window=True)
 
     reply = {"role": "assistant", "content": content}
     if message.get("reasoning_content"):
@@ -169,7 +171,7 @@ def step(spec, run_dir, tools, cursor, result, error: Optional[str] = None) -> O
 
     if cursor.turn >= cursor.max_steps:
         return Done(f"hit the {cursor.max_steps}-turn cap")
-    return _infer(run_dir, cursor)
+    return _infer(run_dir, cursor, ctx)
 
 
 def _clip(text: str, n: int) -> str:
@@ -306,8 +308,8 @@ def _compact(run_dir, cursor, ctx: int) -> None:
         cursor.prompt_tokens = 0
 
 
-def _infer(run_dir, cursor, report: Optional[str] = None, *, full_window: bool = False) -> Infer:
-    ctx = _n_ctx()
+def _infer(run_dir, cursor, ctx: int, report: Optional[str] = None, *,
+           full_window: bool = False) -> Infer:
     if _estimate(cursor) > ctx - _COMPACT_ROOM or (
             full_window and _estimate(cursor) > ctx * _COMPACT_KEEP):
         _compact(run_dir, cursor, ctx)

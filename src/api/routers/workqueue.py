@@ -79,7 +79,7 @@ async def claim(body: ClaimBody, request: Request):
     deadline = loop.time() + window
     first = True
     while True:
-        if first or await asyncio.to_thread(jobs.queue_has_work, body.queue):
+        if first or await asyncio.to_thread(jobs.queue_has_work, body.queue, body.worker_id):
             job = await asyncio.to_thread(jobs.claim_job, body.queue, body.worker_id, lease)
             if job is not None:
                 return {"job": {"id": job["id"], "queue": job["queue"], "payload": job["payload"]}}

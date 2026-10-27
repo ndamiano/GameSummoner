@@ -28,8 +28,10 @@ def _refill_rate_limiter():
 
 
 def test_claim_is_fifo_and_exclusive():
-    a = jobs.enqueue_job("llm", {"n": 1})
-    b = jobs.enqueue_job("llm", {"n": 2})
+    for worker in ("w1", "w2", "w3"):
+        workers.worker_created(worker, None, "llm", None, RATE, model="qwen-flash-next")
+    a = jobs.enqueue_job("llm", {"n": 1}, model="qwen-flash-next")
+    b = jobs.enqueue_job("llm", {"n": 2}, model="qwen-flash-next")
     j1 = jobs.claim_job("llm", "w1", lease_seconds=60)
     j2 = jobs.claim_job("llm", "w2", lease_seconds=60)
     assert (j1["id"], j2["id"]) == (a, b)
@@ -44,8 +46,8 @@ def test_queues_are_separate():
 
 def test_expired_lease_requeues_and_stale_result_is_dropped():
     for worker in ("w1", "w2"):
-        workers.worker_created(worker, None, "llm", None, RATE)
-    job_id = jobs.enqueue_job("llm", {"n": 1})
+        workers.worker_created(worker, None, "llm", None, RATE, model="qwen-flash-next")
+    job_id = jobs.enqueue_job("llm", {"n": 1}, model="qwen-flash-next")
     jobs.claim_job("llm", "w1", lease_seconds=0.01)
     time.sleep(0.02)
     rejig = jobs.claim_job("llm", "w2", lease_seconds=60)
@@ -57,7 +59,8 @@ def test_expired_lease_requeues_and_stale_result_is_dropped():
 
 
 def test_heartbeat_extends_only_the_owners_lease():
-    job_id = jobs.enqueue_job("llm", {})
+    workers.worker_created("w1", None, "llm", None, RATE, model="qwen-flash-next")
+    job_id = jobs.enqueue_job("llm", {}, model="qwen-flash-next")
     jobs.claim_job("llm", "w1", lease_seconds=60)
     assert jobs.heartbeat_job(job_id, "w1", lease_seconds=60) is True
     assert jobs.heartbeat_job(job_id, "intruder", lease_seconds=60) is False
@@ -66,8 +69,8 @@ def test_heartbeat_extends_only_the_owners_lease():
 def test_complete_debits_the_games_budget_and_worker_busy():
     games.create_game("g1", "u1")
     games.charge_game("g1", 1, 1_000_000)
-    workers.worker_created("w1", None, "llm", None, RATE)
-    job_id = jobs.enqueue_job("llm", {}, game_id="g1", build_id="b1")
+    workers.worker_created("w1", None, "llm", None, RATE, model="qwen-flash-next")
+    job_id = jobs.enqueue_job("llm", {}, game_id="g1", build_id="b1", model="qwen-flash-next")
     jobs.claim_job("llm", "w1", lease_seconds=60)
     jobs.complete_job(job_id, "w1", {"out": 1}, None, exec_seconds=12.5)
     assert games.game("g1")["spent_micros"] == calculate_job_cost(12.5, 0.99)
@@ -76,8 +79,8 @@ def test_complete_debits_the_games_budget_and_worker_busy():
 
 
 def test_failed_job_carries_the_error():
-    workers.worker_created("w1", None, "llm", None, RATE)
-    job_id = jobs.enqueue_job("llm", {})
+    workers.worker_created("w1", None, "llm", None, RATE, model="qwen-flash-next")
+    job_id = jobs.enqueue_job("llm", {}, model="qwen-flash-next")
     jobs.claim_job("llm", "w1", lease_seconds=60)
     jobs.complete_job(job_id, "w1", None, "Status 500: boom", 3.0)
     job = jobs.get_job(job_id)
@@ -121,10 +124,10 @@ def test_a_claim_never_hands_a_worker_the_jobs_metadata(client):
 
 
 def test_claim_execute_complete_over_http(client):
-    workers.worker_created("w1", None, "llm", None, RATE)
+    workers.worker_created("w1", None, "llm", None, RATE, model="qwen-flash-next")
     games.create_game("g1", "u1")
     games.charge_game("g1", 1, 1_000_000)
-    jobs.enqueue_job("llm", {"path": "/v1/responses", "body": {"model": "m"}}, game_id="g1", build_id="b1")
+    jobs.enqueue_job("llm", {"path": "/v1/responses", "body": {"model": "m"}}, game_id="g1", build_id="b1", model="qwen-flash-next")
 
     r = client.post("/worker/claim", json={"queue": "llm", "worker_id": "w1"}, headers=_hdr())
     job = r.json()["job"]
@@ -202,13 +205,13 @@ def test_glb_completion_refuses_a_path_shaped_job_id(client, tmp_path, monkeypat
 
 
 def test_empty_claim_long_polls_then_returns_null(client):
-    workers.worker_created("w1", None, "llm", None, RATE)
+    workers.worker_created("w1", None, "llm", None, RATE, model="qwen-flash-next")
     r = client.post("/worker/claim", json={"queue": "llm", "worker_id": "w1"}, headers=_hdr())
     assert r.json() == {"job": None}
 
 
 def test_wait_seconds_shortens_the_long_poll_window(client, monkeypatch):
-    workers.worker_created("w1", None, "llm", None, RATE)
+    workers.worker_created("w1", None, "llm", None, RATE, model="qwen-flash-next")
     monkeypatch.setattr(wq, "CLAIM_LONG_POLL_SECONDS", 30.0)
     t0 = time.time()
     r = client.post("/worker/claim", json={"queue": "llm", "worker_id": "w1",
@@ -218,7 +221,7 @@ def test_wait_seconds_shortens_the_long_poll_window(client, monkeypatch):
 
 
 def test_wait_seconds_is_capped_at_the_server_max(client):
-    workers.worker_created("w1", None, "llm", None, RATE)
+    workers.worker_created("w1", None, "llm", None, RATE, model="qwen-flash-next")
     # server max is 0.2 in this fixture; asking for 60 must not hold the request for 60s
     t0 = time.time()
     r = client.post("/worker/claim", json={"queue": "llm", "worker_id": "w1",
@@ -228,39 +231,65 @@ def test_wait_seconds_is_capped_at_the_server_max(client):
 
 
 def test_claim_keeps_the_pod_id_the_scaler_recorded(client):
-    workers.worker_created("w1", "pod-1", "llm", None, RATE)
+    workers.worker_created("w1", "pod-1", "llm", None, RATE, model="qwen-flash-next")
     client.post("/worker/claim", json={"queue": "llm", "worker_id": "w1"}, headers=_hdr())
-    assert workers.live_workers("llm", 60)[0]["pod_id"] == "pod-1"
+    assert workers.live_workers("llm", "qwen-flash-next", 60)[0]["pod_id"] == "pod-1"
+
+
+@pytest.mark.parametrize("queue,serves,pending,claimed", [
+    ("comfy", None, [("llm-job", "llm", "qwen-flash-next"), ("image", "comfy", None)], "image"),
+    ("llm", "qwen-flash-next", [("ds", "llm", "deepseek-4.1"), ("qwen", "llm", "qwen-flash-next")],
+     "qwen"),
+    ("llm", "deepseek-4.1", [("qwen", "llm", "qwen-flash-next"), ("ds-old", "llm", "deepseek-4.1"),
+                             ("ds-new", "llm", "deepseek-4.1")], "ds-old"),
+    ("llm", "deepseek-4.1", [("qwen", "llm", "qwen-flash-next")], None),
+    ("llm", None, [("qwen", "llm", "qwen-flash-next")], None),
+])
+def test_a_claim_takes_the_oldest_job_for_the_model_its_worker_row_serves(
+        client, llm_entries, queue, serves, pending, claimed):
+    llm_entries["deepseek-4.1"] = {"model": "deepseek-v4.1-flash", "n_ctx": 131072,
+                                   "api": {"base_url": "http://x",
+                                           "usd_per_mtok": {"input": 0, "cached_input": 0,
+                                                            "output": 0}}}
+    workers.worker_created("w1", None, queue, None, RATE, model=serves)
+    ids = {}
+    for label, job_queue, model in pending:
+        ids[jobs.enqueue_job(job_queue, {"label": label}, model=model)] = label
+        time.sleep(0.001)
+    job = client.post("/worker/claim", json={"queue": queue, "worker_id": "w1"},
+                      headers=_hdr()).json()["job"]
+    assert (ids[job["id"]] if job else None) == claimed
 
 
 def test_heartbeat_bumps_worker_last_seen(client):
-    workers.worker_created("w1", None, "llm", None, RATE)
-    jobs.enqueue_job("llm", {})
+    workers.worker_created("w1", None, "llm", None, RATE, model="qwen-flash-next")
+    jobs.enqueue_job("llm", {}, model="qwen-flash-next")
     r = client.post("/worker/claim", json={"queue": "llm", "worker_id": "w1"}, headers=_hdr())
     job = r.json()["job"]
     with connection.platform_db() as conn:
         conn.execute("UPDATE workers SET last_seen_at = last_seen_at - 999 WHERE id = 'w1'")
-    assert workers.live_workers("llm", 60) == []
+    assert workers.live_workers("llm", "qwen-flash-next", 60) == []
     client.post("/worker/heartbeat", json={"job_id": job["id"], "worker_id": "w1"},
                 headers=_hdr())
-    assert [w["id"] for w in workers.live_workers("llm", 60)] == ["w1"]
+    assert [w["id"] for w in workers.live_workers("llm", "qwen-flash-next", 60)] == ["w1"]
 
 
 def test_deregister_terminates_the_worker_row(client):
-    workers.worker_created("w1", "pod-1", "llm", None, RATE)
+    workers.worker_created("w1", "pod-1", "llm", None, RATE, model="qwen-flash-next")
     client.post("/worker/claim", json={"queue": "llm", "worker_id": "w1"}, headers=_hdr())
     r = client.post("/worker/deregister", json={"worker_id": "w1"}, headers=_hdr())
     assert r.json() == {"ok": True}
-    assert workers.live_workers("llm", 60) == []
-    assert workers.terminated_workers_with_pods("llm")[0]["id"] == "w1"
+    assert workers.live_workers("llm", "qwen-flash-next", 60) == []
+    assert workers.terminated_workers_with_pods("llm", "qwen-flash-next")[0]["id"] == "w1"
 
 
 def test_a_worker_nobody_created_is_refused_at_claim(client):
-    jobs.enqueue_job("llm", {})
+    jobs.enqueue_job("llm", {}, model="qwen-flash-next")
     r = client.post("/worker/claim", json={"queue": "llm", "worker_id": "stray"}, headers=_hdr())
     assert r.status_code == 403
     assert "never created" in r.json()["detail"]
-    assert workers.live_workers("llm", 60) == []
+    assert workers.live_workers("llm", "qwen-flash-next", 60) == []
+    workers.worker_created("w1", None, "llm", None, RATE, model="qwen-flash-next")
     assert jobs.claim_job("llm", "w1", 60) is not None
 
 
@@ -270,7 +299,7 @@ def test_deregister_requires_the_token(client):
 
 def _fake_worker(stop, respond):
     """Claim from the store directly and complete with `respond(payload)`."""
-    workers.worker_created("fake", None, "llm", None, RATE)
+    workers.worker_created("fake", None, "llm", None, RATE, model="qwen-flash-next")
     while not stop.is_set():
         job = jobs.claim_job("llm", "fake", lease_seconds=60)
         if job is None:
@@ -281,7 +310,7 @@ def _fake_worker(stop, respond):
 
 
 def _connector(timeout=10):
-    return LLMConnector(model="test-model", job_timeout_seconds=timeout)
+    return LLMConnector("qwen-flash-next", "test-model", 32768, job_timeout_seconds=timeout)
 
 
 @pytest.fixture
@@ -341,9 +370,9 @@ def test_a_blocking_callers_reply_is_whole_until_read_then_elided(fake_worker):
 
 
 def test_a_consumed_jobs_reply_is_elided_by_the_route(client):
-    workers.worker_created("w1", None, "llm", None, RATE)
+    workers.worker_created("w1", None, "llm", None, RATE, model="qwen-flash-next")
     jid = jobs.enqueue_job("llm", {"body": {"model": "m", "messages": []}},
-                            metadata={"then": {"operations": []}})
+                            metadata={"then": {"operations": []}}, model="qwen-flash-next")
     client.post("/worker/claim", json={"queue": "llm", "worker_id": "w1"}, headers=_hdr())
     client.post("/worker/complete", json={
         "job_id": jid, "worker_id": "w1",

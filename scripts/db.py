@@ -1,20 +1,5 @@
 #!/usr/bin/env python3
-"""Read the platform DB from a terminal — named queries for the numbers we ask for repeatedly,
-plus raw SQL for everything else.
-
-Stdlib only, one file, no imports from src/: it has to run over ssh on the prod droplet where
-nothing but the container is installed.
-
-    scripts/db.py cost                    # GPU minutes + served model per game
-    scripts/db.py builds                  # per-build duration, steps, status
-    scripts/db.py models                  # jobs and hours grouped by what actually served them
-    scripts/db.py failures                # failure rate by queue
-    scripts/db.py turns                   # llm jobs per game, newest first
-    scripts/db.py sql "select ..."        # anything else
-
-`--db` points at another file; on prod that is the path inside the container's data volume.
-`--since` takes a date (default 7 days back) and applies to every named query.
-"""
+"""Read the platform DB from a terminal. Stdlib only, so it runs over ssh on the prod droplet."""
 
 import argparse
 import sqlite3
@@ -32,7 +17,7 @@ QUERIES = {
                round(100.0*g.spent_micros/nullif(g.granted_micros,0), 1) AS pct_budget,
                (SELECT count(*) FROM builds b WHERE b.game_id=g.id) AS builds,
                (SELECT group_concat(DISTINCT j.model) FROM jobs j
-                 WHERE j.game_id=g.id AND j.queue='llm') AS served
+                 WHERE j.game_id=g.id AND j.queue='llm') AS models
           FROM games g
          WHERE g.created_at > :since AND g.spent_micros > 0
          ORDER BY g.spent_micros DESC
@@ -46,7 +31,7 @@ QUERIES = {
          ORDER BY b.queued_at DESC
     """,
     "models": """
-        SELECT j.model AS served, j.queue, j.gpu_type, count(*) AS jobs,
+        SELECT j.model, j.queue, j.gpu_type, count(*) AS jobs,
                round(sum(j.exec_seconds)/3600.0, 2) AS hours,
                round(avg(j.exec_seconds), 1) AS avg_sec
           FROM jobs j

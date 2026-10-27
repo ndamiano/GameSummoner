@@ -69,6 +69,17 @@ def isolated_dbs(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def llm_entries(monkeypatch):
+    from config.settings_manager import settings_manager
+
+    entries = {"qwen-flash-next": {"model": "qwen3.8-flash-next-basalt", "n_ctx": 32768,
+                                   "max_tokens": 50000, "reasoning": "medium", "slots": 1,
+                                   "local_gpu": {}}}
+    monkeypatch.setitem(settings_manager._settings, "llm", entries)
+    return entries
+
+
+@pytest.fixture(autouse=True)
 def no_real_bucket(monkeypatch):
     """Autouse, so a test that never thought about s3 cannot reach the real bucket: the settings
     file on a dev box has live credentials, and `ensure_local` on any absent run dir goes to the

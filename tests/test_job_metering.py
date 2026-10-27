@@ -1,56 +1,57 @@
-"""What a completed job records about which model served it. `jobs.model` was written at ENQUEUE
-from what the caller asked for and never corrected, so a pod serving one model filed its jobs under
-another — 387 of them, on a run that cost real money.
-"""
-
 import pytest
 
+from config.llm_models import UnknownModel
 from db import games, jobs, workers
 
 
-def _job(queue: str = "llm", model=None, build_id="b1") -> str:
+def _job(model, queue="llm", worker_model=None, build_id="b1") -> str:
     games.create_game("g1", "u1")
     games.charge_game("g1", 1, 10_000_000)
     job_id = jobs.enqueue_job(queue, {}, game_id="g1", build_id=build_id, model=model)
-    workers.worker_created("w1", None, queue, None, 0.99)
+    workers.worker_created("w1", None, queue, None, 0.99, model=worker_model or model)
     jobs.claim_job(queue, "w1", 60)
     return job_id
 
 
-def test_the_served_model_overwrites_what_was_asked_for():
-    job_id = _job(model="qwen3.6_27b")
-
-    jobs.complete_job(job_id, "w1", {"model": "DeepSeek-V4-Flash-0731"}, None, exec_seconds=1.0)
-
-    assert jobs.get_job(job_id)["model"] == "DeepSeek-V4-Flash-0731"
-
-
-def test_a_served_model_reported_as_a_path_is_stored_as_its_filename():
-    """llama.cpp answers with the gguf path it was launched on; hosted engines answer with a
-    name. Storing the basename makes a grouped cost query comparable across both."""
-    job_id = _job(model="qwen3.6_27b")
-
-    jobs.complete_job(job_id, "w1", {"model": "/workspace/models/LLM/MiniMax-M3-UD.gguf"},
-                       None, exec_seconds=1.0)
-
-    assert jobs.get_job(job_id)["model"] == "MiniMax-M3-UD.gguf"
+def test_an_llm_job_for_no_settings_entry_is_refused_at_enqueue():
+    with pytest.raises(UnknownModel, match="no llm entry 'deepseek-4.1' in settings"):
+        jobs.enqueue_job("llm", {}, model="deepseek-4.1")
+    with pytest.raises(UnknownModel):
+        jobs.enqueue_job("llm", {})
 
 
-def test_a_result_without_a_model_keeps_the_requested_one():
-    """Image and mesh results carry no model field, and must not blank the column."""
-    job_id = _job(queue="comfy", model="sdxl")
+@pytest.mark.parametrize("result,error", [
+    ({"model": "/workspace/models/Qwen3.8-Flash-Next-IQ4_XS.gguf"}, None),
+    ({"model": "qwen3.8-flash-next-basalt"}, None),
+    (None, "Status 500"),
+])
+def test_the_entry_a_job_was_enqueued_for_is_what_its_row_keeps(result, error):
+    job_id = _job("qwen-flash-next")
+    jobs.complete_job(job_id, "w1", result, error, exec_seconds=1.0)
+    assert jobs.get_job(job_id)["model"] == "qwen-flash-next"
 
-    jobs.complete_job(job_id, "w1", {"images": []}, None, exec_seconds=1.0)
 
-    assert jobs.get_job(job_id)["model"] == "sdxl"
+API = {"base_url": "http://api", "usd_per_mtok": {"input": 0.28, "cached_input": 0.028,
+                                                  "output": 0.42}}
 
 
-def test_a_failed_job_keeps_the_requested_model():
-    job_id = _job(model="qwen3.6_27b")
-
-    jobs.complete_job(job_id, "w1", None, "status 500", exec_seconds=1.0)
-
-    assert jobs.get_job(job_id)["model"] == "qwen3.6_27b"
+@pytest.mark.parametrize("usage,prices,billed", [
+    ({"prompt_tokens": 100_000, "completion_tokens": 2_000, "cached_tokens": 90_000},
+     API["usd_per_mtok"], 6_160),
+    ({"prompt_tokens": 100_000, "completion_tokens": 2_000, "cached_tokens": 0},
+     API["usd_per_mtok"], 28_840),
+    ({"prompt_tokens": 7, "completion_tokens": 1}, API["usd_per_mtok"], 3),
+    ({"prompt_tokens": 100_000, "completion_tokens": 2_000, "cached_tokens": 90_000},
+     {"input": 0, "cached_input": 0, "output": 0}, 0),
+])
+def test_an_api_entrys_job_debits_its_tokens_at_the_entrys_prices(llm_entries, usage, prices,
+                                                                  billed):
+    llm_entries["deepseek-4.1"] = {"model": "deepseek-v4.1-flash", "n_ctx": 131072,
+                                   "api": {**API, "usd_per_mtok": prices}}
+    job_id = _job("deepseek-4.1")
+    jobs.complete_job(job_id, "w1", {"choices": [], "usage": usage}, None, exec_seconds=600.0)
+    assert jobs.get_job(job_id)["billed_micros"] == billed
+    assert games.game("g1")["spent_micros"] == billed
 
 
 def _priced_job(usd_per_hour, game="g1", build_id="b1") -> str:
@@ -59,8 +60,8 @@ def _priced_job(usd_per_hour, game="g1", build_id="b1") -> str:
     if games.game(game) is None:
         games.create_game(game, "u1")
         games.charge_game(game, 1, 10_000_000)
-    workers.worker_created(worker, f"p-{usd_per_hour}", "llm", None, usd_per_hour)
-    job_id = jobs.enqueue_job("llm", {}, game_id=game, build_id=build_id)
+    workers.worker_created(worker, f"p-{usd_per_hour}", "llm", None, usd_per_hour, model="qwen-flash-next")
+    job_id = jobs.enqueue_job("llm", {}, game_id=game, build_id=build_id, model="qwen-flash-next")
     jobs.claim_job("llm", worker, 60)
     return job_id
 

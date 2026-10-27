@@ -1,12 +1,23 @@
 {
   "working_directory": "/data",
   "llm": {
-    "model": "local-model",
-    "max_tokens": 50000,
-    "reasoning": "medium",
-    "n_ctx": 32768,
-    "sglang_args": "",
-    "basalt_args": ""
+    "qwen-flash-next": {
+      "model": "local-model",
+      "n_ctx": 32768,
+      "max_tokens": 50000,
+      "reasoning": "medium",
+      "slots": 1,
+      "local_gpu": {
+        "engine_args": ""
+      }
+    }
+  },
+  "scaler": {
+    "tick_seconds": 15,
+    "stale_worker_seconds": 180,
+    "max_workers": 3,
+    "min_jobs_per_pod": 6,
+    "cooldown_seconds": 300
   },
   "play": {
     "origin": "",
@@ -24,36 +35,14 @@
     "cloud_type": "SECURE",
     "cp_url": "",
     "pod_prefix": "maestro",
-    "tick_seconds": 15,
-    "stale_worker_seconds": 180,
     "queues": {
-      "llm": {
-        "template_id": "",
-        "network_volume_ids": [],
-        "gpu_type_ids": [
-          "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
-          "NVIDIA RTX PRO 6000 Blackwell Server Edition"
-        ],
-        "max_workers": 3,
-        "boot_seconds": 240,
-        "min_jobs_per_pod": 6,
-        "cooldown_seconds": 300,
-        "idle_exit_seconds": 60,
-        "boot_deadline_seconds": 300,
-        "allowed_cuda_versions": [
-          "13.0"
-        ]
-      },
       "comfy": {
         "template_id": "",
         "gpu_type_ids": [
           "NVIDIA GeForce RTX 5090",
           "NVIDIA RTX PRO 4500 Blackwell"
         ],
-        "max_workers": 3,
         "boot_seconds": 90,
-        "min_jobs_per_pod": 6,
-        "cooldown_seconds": 90,
         "idle_exit_seconds": 30,
         "boot_deadline_seconds": 300
       }

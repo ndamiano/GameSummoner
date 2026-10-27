@@ -19,7 +19,7 @@ def _game(micros: int = 1_000_000, game_id: str = "g1") -> str:
     games.create_game(game_id, "u1")
     games.charge_game(game_id, 1, micros)
     for worker in ("w1", "w2"):
-        workers.worker_created(worker, None, "llm", None, RATE)
+        workers.worker_created(worker, None, "comfy", None, RATE)
     return game_id
 
 
@@ -66,7 +66,7 @@ def test_only_one_completion_of_a_batch_sees_it_complete():
 
 def test_a_job_outside_any_batch_never_reports_complete():
     _game()
-    job = jobs.enqueue_job("llm", {"n": 1}, game_id="g1", build_id="b1")
+    job = jobs.enqueue_job("comfy", {"n": 1}, game_id="g1", build_id="b1")
     out = _complete(job)
     assert out["batch_id"] is None
     assert out["batch_complete"] is False
@@ -134,7 +134,7 @@ def test_a_game_with_queued_batch_work_reads_as_active():
 
 def test_unbatched_work_does_not_count_as_an_active_batch():
     _game()
-    jobs.enqueue_job("llm", {"n": 1}, game_id="g1", build_id="b1")
+    jobs.enqueue_job("llm", {"n": 1}, game_id="g1", build_id="b1", model="qwen-flash-next")
     assert jobs.has_active_batch("g1") is False
 
 

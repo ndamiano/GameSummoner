@@ -97,7 +97,7 @@ def connector(monkeypatch):
 
     Fake.seen = []
     Fake.replies = []
-    monkeypatch.setattr(design, "get_connector", lambda: Fake())
+    monkeypatch.setattr(design, "get_connector", lambda name: Fake())
     return Fake
 
 

@@ -18,8 +18,8 @@ def _game():
 
 def test_pending_head_is_claim_order_capped():
     _game()
-    ids = [jobs.enqueue_job("llm", {}, game_id="g1", build_id="b1") for _ in range(4)]
-    head = jobs.pending_jobs_head("llm", 3)
+    ids = [jobs.enqueue_job("llm", {}, game_id="g1", build_id="b1", model="qwen-flash-next") for _ in range(4)]
+    head = jobs.pending_jobs_head("llm", "qwen-flash-next", 3)
     assert [j["id"] for j in head] == ids[:3]
     assert head[0].keys() == {"id", "game_id", "build_id", "created_at"}
     assert head[0]["game_id"] == "g1"
@@ -27,34 +27,35 @@ def test_pending_head_is_claim_order_capped():
 
 def test_claimed_jobs_leave_the_head_and_name_their_worker():
     _game()
-    first = jobs.enqueue_job("llm", {}, game_id="g1", build_id="b1")
-    second = jobs.enqueue_job("llm", {}, game_id="g1", build_id="b1")
-    workers.worker_created("w1", None, "llm", None, RATE)
+    first = jobs.enqueue_job("llm", {}, game_id="g1", build_id="b1", model="qwen-flash-next")
+    second = jobs.enqueue_job("llm", {}, game_id="g1", build_id="b1", model="qwen-flash-next")
+    workers.worker_created("w1", None, "llm", None, RATE, model="qwen-flash-next")
     jobs.claim_job("llm", "w1", 60)
 
-    assert [j["id"] for j in jobs.pending_jobs_head("llm", 10)] == [second]
-    held = jobs.claimed_jobs("llm")
+    assert [j["id"] for j in jobs.pending_jobs_head("llm", "qwen-flash-next", 10)] == [second]
+    held = jobs.claimed_jobs("llm", "qwen-flash-next")
     assert [(j["id"], j["worker_id"]) for j in held] == [(first, "w1")]
     assert held[0]["started_at"] <= time.time()
-    assert jobs.claimed_jobs("comfy") == []
+    assert jobs.claimed_jobs("comfy", None) == []
 
 
 def test_backlog_sums_the_estimates_of_unfinished_jobs():
     _game()
-    jobs.enqueue_job("llm", {}, game_id="g1", build_id="b1")
-    jobs.enqueue_job("llm", {}, game_id="g1", build_id="b1")
-    assert jobs.backlog_seconds("llm") == 2 * QUEUE_SECONDS_ESTIMATES["llm"]
+    jobs.enqueue_job("llm", {}, game_id="g1", build_id="b1", model="qwen-flash-next")
+    jobs.enqueue_job("llm", {}, game_id="g1", build_id="b1", model="qwen-flash-next")
+    assert jobs.backlog_seconds("llm", "qwen-flash-next") == 2 * QUEUE_SECONDS_ESTIMATES["llm"]
 
-    workers.worker_created("w1", None, "llm", None, RATE)
+    workers.worker_created("w1", None, "llm", None, RATE, model="qwen-flash-next")
     claimed = jobs.claim_job("llm", "w1", 60)
     jobs.complete_job(claimed["id"], "w1", {"ok": True}, None, exec_seconds=12.0)
-    assert jobs.backlog_seconds("llm") == QUEUE_SECONDS_ESTIMATES["llm"]
+    assert jobs.backlog_seconds("llm", "qwen-flash-next") == QUEUE_SECONDS_ESTIMATES["llm"]
 
 
 def _finish(queue, exec_seconds, *, game_id, gpu_type=None, build_id="b1"):
-    jobs.enqueue_job(queue, {}, game_id=game_id, build_id=build_id)
+    model = "qwen-flash-next" if queue == "llm" else None
+    jobs.enqueue_job(queue, {}, game_id=game_id, build_id=build_id, model=model)
     worker = f"w{next(_worker_seq)}"
-    workers.worker_created(worker, None, queue, None, RATE)
+    workers.worker_created(worker, None, queue, None, RATE, model=model)
     claimed = jobs.claim_job(queue, worker, 60)
     jobs.complete_job(claimed["id"], worker, {"ok": True}, None,
                        exec_seconds=exec_seconds, gpu_type=gpu_type)
@@ -62,10 +63,10 @@ def _finish(queue, exec_seconds, *, game_id, gpu_type=None, build_id="b1"):
 
 def test_pod_ledger_counts_each_pods_jobs_and_what_its_games_were_debited():
     _game()
-    workers.worker_created("wp", "p1", "llm", "A", 1.0)
+    workers.worker_created("wp", "p1", "llm", "A", 1.0, model="qwen-flash-next")
     workers.worker_seen("wp", "llm", gpu_type="A", source="runpod")
     for game_id, error, secs in [("g1", None, 36.0), ("g1", "boom", 18.0), (None, None, 9.0)]:
-        jobs.enqueue_job("llm", {}, game_id=game_id, build_id="b1")
+        jobs.enqueue_job("llm", {}, game_id=game_id, build_id="b1", model="qwen-flash-next")
         claimed = jobs.claim_job("llm", "wp", 60)
         jobs.complete_job(claimed["id"], "wp", None if error else {"ok": True}, error,
                            exec_seconds=secs)
@@ -82,13 +83,13 @@ def test_pod_ledger_counts_each_pods_jobs_and_what_its_games_were_debited():
 
 def test_pod_ledger_is_one_row_per_life_when_runpod_reuses_a_pod_id():
     _game()
-    workers.worker_created("tue", "p1", "llm", "A", 2.0)
-    workers.worker_created("wed", "p1", "llm", "A", 1.0)
+    workers.worker_created("tue", "p1", "llm", "A", 2.0, model="qwen-flash-next")
+    workers.worker_created("wed", "p1", "llm", "A", 1.0, model="qwen-flash-next")
     with connection.platform_db() as conn:
         conn.execute("UPDATE workers SET started_at = started_at - 86400 WHERE id = 'tue'")
     for worker in ("tue", "wed"):
         workers.worker_seen(worker, "llm", gpu_type="A", source="runpod")
-        jobs.enqueue_job("llm", {}, game_id="g1", build_id="b1")
+        jobs.enqueue_job("llm", {}, game_id="g1", build_id="b1", model="qwen-flash-next")
         claimed = jobs.claim_job("llm", worker, 60)
         jobs.complete_job(claimed["id"], worker, {"ok": True}, None, exec_seconds=10.0)
 
@@ -146,29 +147,36 @@ def test_games_change_count_is_the_games_change_rounds_ever():
     assert games.games_change_count([]) == 0
 
 
-def test_pod_refusals_count_stock_only_per_window_and_keep_the_latest():
-    workers.record_pod_refusal("llm", "other", [{"volume": "v", "gpu_type_ids": ["a"],
-                                              "error": "401 unauthorized"}], "401 unauthorized")
-    workers.record_pod_refusal("llm", "stock", [{"volume": "v", "gpu_type_ids": ["a"],
-                                              "error": "no instances"}], "no instances")
-    workers.record_pod_refusal("comfy", "stock", [], "no instances")
+def test_pod_refusals_count_stock_only_per_pool_per_window_and_keep_the_latest():
+    workers.record_pod_refusal("llm", "qwen-flash-next", "other", [
+        {"volume": "v", "gpu_type_ids": ["a"], "error": "401 unauthorized"}], "401 unauthorized")
+    workers.record_pod_refusal("llm", "qwen-flash-next", "stock", [
+        {"volume": "v", "gpu_type_ids": ["a"], "error": "no instances"}], "no instances")
+    workers.record_pod_refusal("llm", "deepseek-4.1", "stock", [], "no instances")
+    workers.record_pod_refusal("comfy", None, "stock", [], "no instances")
+    workers.record_pod_created("comfy", None)
     now = time.time()
     with connection.platform_db() as conn:
         conn.execute("UPDATE pod_refusals SET created_at = ? WHERE queue = 'comfy'",
                      (now - 2 * 24 * 3600,))
-    s = workers.pod_stockout_stats("llm", now)
+        days = {(r["queue"], r["model"]): (r["attempts"], r["stock_refusals"], r["other_refusals"])
+                for r in conn.execute("SELECT * FROM pod_request_days")}
+    s = workers.pod_stockout_stats("llm", "qwen-flash-next", now)
     assert (s["last_1h"], s["last_24h"], s["last_7d"]) == (1, 1, 1)
     assert abs(s["last_at"] - now) < 5
-    image = workers.pod_stockout_stats("comfy", now)
+    assert workers.pod_stockout_stats("llm", "deepseek-4.1", now)["last_7d"] == 1
+    image = workers.pod_stockout_stats("comfy", None, now)
     assert (image["last_1h"], image["last_24h"], image["last_7d"]) == (0, 0, 1)
-    assert workers.pod_stockout_stats("mesh", now)["last_at"] is None
+    assert workers.pod_stockout_stats("mesh", None, now)["last_at"] is None
+    assert days == {("llm", "qwen-flash-next"): (2, 1, 1), ("llm", "deepseek-4.1"): (1, 1, 0),
+                    ("comfy", ""): (2, 1, 0)}
 
 
 def test_pod_refusals_older_than_thirty_days_are_pruned_on_insert():
-    workers.record_pod_refusal("llm", "stock", [], "old")
+    workers.record_pod_refusal("llm", "qwen-flash-next", "stock", [], "old")
     with connection.platform_db() as conn:
         conn.execute("UPDATE pod_refusals SET created_at = ?", (time.time() - 31 * 24 * 3600,))
-    workers.record_pod_refusal("llm", "stock", [], "new")
+    workers.record_pod_refusal("llm", "qwen-flash-next", "stock", [], "new")
     with connection.platform_db() as conn:
         assert [r["error"] for r in conn.execute("SELECT error FROM pod_refusals")] == ["new"]
 

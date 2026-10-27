@@ -1,6 +1,4 @@
-"""The control-plane scaling loop: per tick every provider lists its machines, then per queue
-stats → decide → execute, a scale-up walking one ladder merged across the providers. A failed
-tick is logged and skipped, never fatal."""
+"""The control-plane scaling loop."""
 
 import logging
 import threading
@@ -17,6 +15,7 @@ from scaler.policy import (
     TerminatePod,
     decide,
 )
+from scaler.pools import Pool, pools
 from scaler.providers import Machine, Provider, ProviderError, merge_ladders
 from scaler.stats import StatsSource
 
@@ -47,7 +46,7 @@ class Autoscaler:
     def _loop(self) -> None:
         logger.info("autoscaler started")
         while True:
-            tick_seconds = (self._settings().get("runpod") or {}).get("tick_seconds", 15)
+            tick_seconds = self._settings()["scaler"]["tick_seconds"]
             if self._stop.wait(tick_seconds):
                 return
             try:
@@ -67,6 +66,7 @@ class Autoscaler:
     def tick(self) -> None:
         settings = self._settings()
         rp = settings.get("runpod") or {}
+        scaler = settings["scaler"]
         token = (settings.get("workqueue") or {}).get("token", "")
         now = time.time()
 
@@ -78,50 +78,51 @@ class Autoscaler:
         for pod_id in self._pod_first_seen.keys() - listed:
             del self._pod_first_seen[pod_id]
 
-        for queue, qcfg in (rp.get("queues") or {}).items():
-            prefix = f"{pod_prefix}-{queue}-"
-            created = {b.pod_id: b.started_at for b in self._stats.booting_workers(queue)}
-            qpods = [PodInfo(p.id, p.name, now - created.get(p.id, self._pod_first_seen[p.id]))
-                     for p in pods if p.name.startswith(prefix)]
-            staleness = rp.get("stale_worker_seconds", 180)
+        staleness = scaler["stale_worker_seconds"]
+        for pool in pools(settings):
+            deadlines = {name: block.get("boot_deadline_seconds", 300)
+                         for name, block in pool.providers.items()}
+            created = {b.pod_id: b.started_at
+                       for b in self._stats.booting_workers(pool.queue, pool.model)}
+            qpods = [PodInfo(p.id, p.name, now - created.get(p.id, self._pod_first_seen[p.id]),
+                             deadlines.get(self._owner[p.id].name, 0.0))
+                     for p in pods if pool.owns(p.name, pod_prefix)]
             policy = ScalingPolicy(
-                max_workers=qcfg.get("max_workers", 2),
-                cooldown_seconds=qcfg.get("cooldown_seconds", 90),
-                boot_deadline_seconds=qcfg.get("boot_deadline_seconds", 300),
-                boot_seconds=qcfg.get("boot_seconds", 150),
-                assumed_job_seconds=QUEUE_SECONDS_ESTIMATES[queue],
-                min_jobs_per_pod=qcfg.get("min_jobs_per_pod", 6),
+                max_workers=scaler["max_workers"],
+                cooldown_seconds=scaler["cooldown_seconds"],
+                boot_seconds=max((block.get("boot_seconds", 150)
+                                  for block in pool.providers.values()), default=0.0),
+                assumed_job_seconds=QUEUE_SECONDS_ESTIMATES[pool.queue],
+                min_jobs_per_pod=scaler["min_jobs_per_pod"],
             )
             actions = decide(
-                queue, policy,
-                self._stats.queue_stats(queue),
-                self._stats.live_workers(queue, staleness),
-                self._stats.stale_workers(queue, staleness, policy.boot_deadline_seconds),
-                self._stats.terminated_workers_with_pods(queue),
+                pool.name, policy,
+                self._stats.queue_stats(pool.queue, pool.model),
+                self._stats.live_workers(pool.queue, pool.model, staleness),
+                self._stats.stale_workers(pool.queue, pool.model, staleness, deadlines),
+                self._stats.terminated_workers_with_pods(pool.queue, pool.model),
                 qpods,
-                now - self._last_scale_up.get(queue, 0.0),
+                now - self._last_scale_up.get(pool.name, 0.0),
             )
             for action in actions:
-                self._execute(action, queue, qcfg, rp, token, settings["llm"], now)
+                self._execute(action, pool, rp, token, now)
 
-    def _execute(self, action, queue: str, qcfg: Dict, rp: Dict, token: str, llm: Dict,
-                 now: float) -> None:
+    def _execute(self, action, pool: Pool, rp: Dict, token: str, now: float) -> None:
         try:
             if isinstance(action, StartPod):
-                name = f"{rp.get('pod_prefix', 'maestro')}-{queue}-{uuid.uuid4().hex[:8]}"
+                name = f"{rp.get('pod_prefix', 'maestro')}-{pool.name}-{uuid.uuid4().hex[:8]}"
                 env = {
                     "CP_URL": rp.get("cp_url", ""),
                     "WORKER_TOKEN": token,
-                    "WORKER_QUEUE": queue,
-                    "IDLE_EXIT_SECONDS": str(qcfg.get("idle_exit_seconds", 10)),
+                    "WORKER_QUEUE": pool.queue,
                 }
-                if queue == "llm":
-                    env["LLM_MODEL"] = llm["model"]
-                    env["LLM_N_CTX"] = str(llm["n_ctx"])
-                    env["BASALT_ARGS_EXTRA"] = llm.get("basalt_args") or ""
-                    env["WORKER_SLOTS"] = str(llm.get("slots", 1))
-                if self._start_pod(name, queue, env, uuid.uuid4().hex):
-                    self._last_scale_up[queue] = now
+                if pool.model:
+                    env["LLM_MODEL"] = pool.entry["model"]
+                    env["LLM_N_CTX"] = str(pool.entry["n_ctx"])
+                    env["BASALT_ARGS_EXTRA"] = pool.entry["self_hosted"].get("engine_args") or ""
+                    env["WORKER_SLOTS"] = str(pool.entry.get("slots", 1))
+                if self._start_pod(name, pool, env, uuid.uuid4().hex):
+                    self._last_scale_up[pool.name] = now
             elif isinstance(action, TerminatePod):
                 self._owner[action.pod_id].terminate(action.pod_id)
                 self._stats.mark_pod_terminated(action.pod_id)
@@ -129,34 +130,42 @@ class Autoscaler:
             elif isinstance(action, MarkWorkerTerminated):
                 self._stats.mark_worker_terminated(action.worker_id)
         except ProviderError as e:
-            logger.error("action %r on queue %s failed: %s", action, queue, e)
+            logger.error("action %r on pool %s failed: %s", action, pool.name, e)
 
-    def _start_pod(self, name: str, queue: str, env: Dict, worker_id: str) -> bool:
+    def _start_pod(self, name: str, pool: Pool, env: Dict, worker_id: str) -> bool:
         by_name = {p.name: p for p in self._providers}
         ladders = []
         for provider in self._providers:
+            if provider.name not in pool.providers:
+                continue
             try:
-                ladders.append(provider.rungs(queue))
+                ladders.append(provider.rungs(pool.providers[provider.name]))
             except ProviderError as e:
-                logger.error("scale-up %s: %s has no ladder: %s", queue, provider.name, e)
+                logger.error("scale-up %s: %s has no ladder: %s", pool.name, provider.name, e)
         refused: List[Dict] = []
         for rung in merge_ladders(ladders):
+            block = pool.providers[rung.provider]
             try:
-                launched = by_name[rung.provider].launch(rung, name, env, worker_id)
+                launched = by_name[rung.provider].launch(
+                    rung, block, name,
+                    {**env, "IDLE_EXIT_SECONDS": str(block.get("idle_exit_seconds", 10))},
+                    worker_id)
             except ProviderError as e:
                 refused.append({"provider": rung.provider, **rung.ask, "error": str(e),
                                 "stock": e.stock})
-                logger.warning("scale-up %s: %s refused %s at $%.4f/hr (%s)", queue,
+                logger.warning("scale-up %s: %s refused %s at $%.4f/hr (%s)", pool.name,
                                rung.provider, rung.ask, rung.usd_per_hour, e)
                 continue
-            logger.info("scale-up %s: %s launched %s (%s) on %s at $%.4f/hr", queue,
+            logger.info("scale-up %s: %s launched %s (%s) on %s at $%.4f/hr", pool.name,
                         rung.provider, name, launched.id, rung.ask, rung.usd_per_hour)
-            self._stats.record_pod_created(queue)
-            self._stats.record_worker_created(worker_id, launched.id, queue, launched.gpu_type,
-                                              launched.usd_per_hour, rung.provider)
+            self._stats.record_pod_created(pool.queue, pool.model)
+            self._stats.record_worker_created(worker_id, launched.id, pool.queue, pool.model,
+                                              launched.gpu_type, launched.usd_per_hour,
+                                              rung.provider)
             return True
         if refused:
             kind = "stock" if all(r["stock"] for r in refused) else "other"
-            self._stats.record_pod_refusal(queue, kind, refused, refused[-1]["error"])
-            logger.error("scale-up %s: every rung refused (%s)", queue, kind)
+            self._stats.record_pod_refusal(pool.queue, pool.model, kind, refused,
+                                           refused[-1]["error"])
+            logger.error("scale-up %s: every rung refused (%s)", pool.name, kind)
         return False

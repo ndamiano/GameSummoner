@@ -109,6 +109,7 @@ export interface Stockouts {
 
 export interface QueueRow {
     queue: string
+    model: string | null
     pending: number
     claimed: number
     oldest_pending_age_seconds: number | null

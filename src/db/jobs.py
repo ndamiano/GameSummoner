@@ -11,7 +11,9 @@ from billing.estimates import (
     QUEUE_MICRO_ESTIMATES,
     QUEUE_SECONDS_ESTIMATES,
     calculate_job_cost,
+    calculate_token_cost,
 )
+from config import llm_models
 from db.connection import platform_db
 from db.errors import BuildEnded, GamePaused, InsufficientCompute
 from db.games import remaining_locked
@@ -22,6 +24,8 @@ logger = logging.getLogger(__name__)
 def _insert_job_locked(conn, queue: str, payload: Dict, game_id: Optional[str],
                        build_id: Optional[str], model: Optional[str],
                        batch_id: Optional[str], metadata: Optional[Dict]) -> str:
+    if queue == "llm":
+        llm_models.entry(model)
     reserved = QUEUE_MICRO_ESTIMATES[queue]
     job_id = uuid.uuid4().hex[:16]
     if game_id is not None:
@@ -94,14 +98,17 @@ def abandon_pending_batch_jobs(game_id: str, error: str) -> int:
             error)
 
 
-def queue_has_work(queue: str) -> bool:
+_WORKER_MODEL = "model IS (SELECT model FROM workers WHERE id = ?)"
+
+
+def queue_has_work(queue: str, worker_id: str) -> bool:
     """Lock-free peek for the claim long-poll: a pending row, or one whose lease lapsed."""
     now = time.time()
     with platform_db() as conn:
         row = conn.execute(
-            "SELECT 1 FROM jobs WHERE queue = ? AND (status = 'pending' "
+            f"SELECT 1 FROM jobs WHERE queue = ? AND {_WORKER_MODEL} AND (status = 'pending' "
             "OR (status = 'claimed' AND lease_expires_at < ?)) LIMIT 1",
-            (queue, now)).fetchone()
+            (queue, worker_id, now)).fetchone()
     return row is not None
 
 
@@ -115,10 +122,10 @@ def claim_job(queue: str, worker_id: str, lease_seconds: float) -> Optional[Dict
         row = conn.execute(
             "UPDATE jobs SET status = 'claimed', worker_id = ?, started_at = ?, "
             "lease_expires_at = ? WHERE id = ("
-            "  SELECT id FROM jobs WHERE queue = ? AND status = 'pending' "
+            f"  SELECT id FROM jobs WHERE queue = ? AND {_WORKER_MODEL} AND status = 'pending' "
             "  ORDER BY created_at LIMIT 1) "
             "RETURNING *",
-            (worker_id, now, now + lease_seconds, queue),
+            (worker_id, now, now + lease_seconds, queue, worker_id),
         ).fetchone()
     if row is None:
         return None
@@ -136,11 +143,6 @@ def heartbeat_job(job_id: str, worker_id: str, lease_seconds: float) -> bool:
             (time.time() + lease_seconds, job_id, worker_id),
         )
     return cur.rowcount == 1
-
-
-def served_model(result: Optional[Dict]) -> Optional[str]:
-    name = (result or {}).get("model")
-    return name.rsplit("/", 1)[-1] if isinstance(name, str) and name else None
 
 
 def _system_of(body: Dict) -> str:
@@ -218,20 +220,25 @@ def complete_job(job_id: str, worker_id: str, result: Optional[Dict], error: Opt
     status = "failed" if error else "done"
     with platform_db() as conn:
         job_row = conn.execute(
-            "SELECT queue, payload FROM jobs WHERE id = ? AND worker_id = ? AND status = 'claimed'",
+            "SELECT queue, model, payload FROM jobs "
+            "WHERE id = ? AND worker_id = ? AND status = 'claimed'",
             (job_id, worker_id)).fetchone()
         if job_row is None:
             return None
         payload = elide_payload(job_row["queue"], json.loads(job_row["payload"]))
-        rate = conn.execute("SELECT usd_per_hour FROM workers WHERE id = ?", (worker_id,)).fetchone()
-        billed = calculate_job_cost(exec_seconds, rate["usd_per_hour"])
+        api = llm_models.entry(job_row["model"]).get("api") if job_row["queue"] == "llm" else None
+        if api:
+            billed = calculate_token_cost((result or {}).get("usage") or {}, api["usd_per_mtok"])
+        else:
+            rate = conn.execute("SELECT usd_per_hour FROM workers WHERE id = ?",
+                                (worker_id,)).fetchone()
+            billed = calculate_job_cost(exec_seconds, rate["usd_per_hour"])
         cur = conn.execute(
             "UPDATE jobs SET status = ?, payload = ?, result = ?, error = ?, exec_seconds = ?, "
-            "billed_micros = ?, gpu_type = ?, model = COALESCE(?, model), "
-            "finished_at = ? WHERE id = ?",
+            "billed_micros = ?, gpu_type = ?, finished_at = ? WHERE id = ?",
             (status, json.dumps(payload, ensure_ascii=False),
              json.dumps(result, ensure_ascii=False) if result is not None else None,
-             error, exec_seconds, billed, gpu_type, served_model(result), now, job_id),
+             error, exec_seconds, billed, gpu_type, now, job_id),
         )
         if cur.rowcount != 1:
             return None
@@ -342,15 +349,15 @@ def batches_awaiting_finalize(grace_seconds: float) -> List[str]:
     return [r["batch_id"] for r in rows]
 
 
-def queue_stats(queue: str) -> Dict:
+def queue_stats(queue: str, model: Optional[str]) -> Dict:
     now = time.time()
     with platform_db() as conn:
         row = conn.execute(
             "SELECT SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending, "
             "SUM(CASE WHEN status = 'claimed' THEN 1 ELSE 0 END) AS claimed, "
             "MIN(CASE WHEN status = 'pending' THEN created_at END) AS oldest "
-            "FROM jobs WHERE queue = ? AND status IN ('pending', 'claimed')",
-            (queue,)).fetchone()
+            "FROM jobs WHERE queue = ? AND model IS ? AND status IN ('pending', 'claimed')",
+            (queue, model)).fetchone()
     return {
         "pending": row["pending"] or 0,
         "claimed": row["claimed"] or 0,
@@ -358,39 +365,40 @@ def queue_stats(queue: str) -> Dict:
     }
 
 
-def recent_job_seconds(queue: str, since: float) -> Optional[float]:
+def recent_job_seconds(queue: str, model: Optional[str], since: float) -> Optional[float]:
     """Mean exec time of jobs done since `since`, slowest tenth dropped."""
     with platform_db() as conn:
         rows = conn.execute(
-            "SELECT exec_seconds FROM jobs WHERE queue = ? AND status = 'done' "
+            "SELECT exec_seconds FROM jobs WHERE queue = ? AND model IS ? AND status = 'done' "
             "AND exec_seconds IS NOT NULL AND finished_at >= ? ORDER BY exec_seconds",
-            (queue, since)).fetchall()
+            (queue, model, since)).fetchall()
     if not rows:
         return None
     kept = [r["exec_seconds"] for r in rows][:max(1, len(rows) * 9 // 10)]
     return sum(kept) / len(kept)
 
 
-def backlog_seconds(queue: str) -> float:
+def backlog_seconds(queue: str, model: Optional[str]) -> float:
     with platform_db() as conn:
         row = conn.execute(
             "SELECT COUNT(*) AS n FROM jobs "
-            "WHERE queue = ? AND status IN ('pending', 'claimed')", (queue,)).fetchone()
+            "WHERE queue = ? AND model IS ? AND status IN ('pending', 'claimed')",
+            (queue, model)).fetchone()
     return row["n"] * QUEUE_SECONDS_ESTIMATES[queue]
 
 
-def pending_jobs_head(queue: str, limit: int) -> List[Dict]:
+def pending_jobs_head(queue: str, model: Optional[str], limit: int) -> List[Dict]:
     with platform_db() as conn:
         rows = conn.execute(
             "SELECT id, game_id, build_id, created_at FROM jobs "
-            "WHERE queue = ? AND status = 'pending' ORDER BY created_at LIMIT ?",
-            (queue, limit)).fetchall()
+            "WHERE queue = ? AND model IS ? AND status = 'pending' ORDER BY created_at LIMIT ?",
+            (queue, model, limit)).fetchall()
     return [dict(r) for r in rows]
 
 
-def claimed_jobs(queue: str) -> List[Dict]:
+def claimed_jobs(queue: str, model: Optional[str]) -> List[Dict]:
     with platform_db() as conn:
         rows = conn.execute(
             "SELECT id, game_id, build_id, worker_id, started_at FROM jobs "
-            "WHERE queue = ? AND status = 'claimed'", (queue,)).fetchall()
+            "WHERE queue = ? AND model IS ? AND status = 'claimed'", (queue, model)).fetchall()
     return [dict(r) for r in rows]

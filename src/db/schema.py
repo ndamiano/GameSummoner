@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     started_at       REAL,
     finished_at      REAL
 );
-CREATE INDEX IF NOT EXISTS idx_jobs_claim ON jobs(queue, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_pool ON jobs(queue, model, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_build ON jobs(build_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_batch ON jobs(batch_id, status);
 
@@ -84,6 +84,7 @@ CREATE INDEX IF NOT EXISTS idx_violations_user ON violations(user_id, created_at
 CREATE TABLE IF NOT EXISTS workers (
     id            TEXT PRIMARY KEY,
     queue         TEXT,
+    model         TEXT,
     gpu_type      TEXT,
     source        TEXT,
     pod_id        TEXT,
@@ -98,20 +99,22 @@ CREATE TABLE IF NOT EXISTS workers (
 CREATE TABLE IF NOT EXISTS pod_refusals (
     id         INTEGER PRIMARY KEY,
     queue      TEXT NOT NULL,
+    model      TEXT,
     kind       TEXT NOT NULL,
     attempts   TEXT NOT NULL,
     error      TEXT NOT NULL,
     created_at REAL NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_pod_refusals_queue ON pod_refusals(queue, kind, created_at);
+CREATE INDEX IF NOT EXISTS idx_pod_refusals_pool ON pod_refusals(queue, model, kind, created_at);
 
 CREATE TABLE IF NOT EXISTS pod_request_days (
     queue           TEXT NOT NULL,
+    model           TEXT NOT NULL DEFAULT '',
     day             TEXT NOT NULL,
     attempts        INTEGER NOT NULL DEFAULT 0,
     stock_refusals  INTEGER NOT NULL DEFAULT 0,
     other_refusals  INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (queue, day)
+    PRIMARY KEY (queue, model, day)
 );
 """
 AUTH_SCHEMA = """

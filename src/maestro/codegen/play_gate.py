@@ -124,7 +124,7 @@ def _elided(history: List[Dict]) -> List[Dict]:
 
 
 def _ask(system: str, history: List[Dict], max_tokens: int) -> Optional[str]:
-    reply = get_connector().generate_with_tools(
+    reply = get_connector("qwen-flash-next").generate_with_tools(
         MessageBuilder(system).extend(_elided(history)).build(), [],
         max_tokens=max_tokens, reasoning="low")
     if reply.get("error"):

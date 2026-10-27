@@ -17,6 +17,7 @@ from config.settings_manager import settings_manager
 from db import events, games, jobs, workers
 from maestro import shares
 from maestro.codegen import build_chain
+from scaler.pools import pools
 from scaler.runpod_client import RunPodClient
 
 logger = logging.getLogger("admin")
@@ -27,24 +28,22 @@ _DAY_SECONDS = 86400
 _NEXT_LIMIT = 10
 
 
-def _max_workers(queue: str) -> int:
-    """The maximum workers to spin up for a queue"""
-    settings = settings_manager.get_settings()
-    rp = settings.get("runpod") or {}
-    if not (rp.get("enabled") or (settings.get("aws") or {}).get("enabled")):
+def _pools(settings: Dict[str, Any]) -> List[Tuple[str, Optional[str]]]:
+    return [("llm", name) for name in settings["llm"]] + [
+        (q, None) for q in QUEUE_SECONDS_ESTIMATES if q != "llm"]
+
+
+def _max_workers(settings: Dict[str, Any], queue: str, model: Optional[str]) -> int:
+    if not ((settings.get("runpod") or {}).get("enabled")
+            or (settings.get("aws") or {}).get("enabled")):
         return 0
-    return int((rp.get("queues") or {}).get(queue, {}).get("max_workers", 0))
+    scaled = {(p.queue, p.model) for p in pools(settings)}
+    return int(settings["scaler"]["max_workers"]) if (queue, model) in scaled else 0
 
 
-def _freshness() -> float:
-    """How many seconds after a worker heartbeat before it's considered stale."""
-    rp = settings_manager.get_settings().get("runpod") or {}
-    return float(rp.get("stale_worker_seconds", 180))
-
-
-def _stockouts(queue: str, now: float) -> Dict[str, Any]:
+def _stockouts(queue: str, model: Optional[str], now: float) -> Dict[str, Any]:
     """Returns stock refusal counts per window, and whether there's an active stock outage."""
-    stats = workers.pod_stockout_stats(queue, now)
+    stats = workers.pod_stockout_stats(queue, model, now)
     return {
         "last_1h": stats["last_1h"],
         "last_24h": stats["last_24h"],
@@ -53,11 +52,12 @@ def _stockouts(queue: str, now: float) -> Dict[str, Any]:
     }
 
 
-def _workers(queue: str, now: float, freshness: float) -> List[Dict[str, Any]]:
+def _workers(queue: str, model: Optional[str], now: float,
+             freshness: float) -> List[Dict[str, Any]]:
     """Returns a list of live workers."""
-    held = {j["worker_id"]: j for j in jobs.claimed_jobs(queue)}
+    held = {j["worker_id"]: j for j in jobs.claimed_jobs(queue, model)}
     rows = []
-    for w in workers.booting_workers(queue) + workers.live_workers(queue, freshness):
+    for w in workers.booting_workers(queue, model) + workers.live_workers(queue, model, freshness):
         job = held.get(w["id"])
         rows.append({
             "id": w["id"],
@@ -78,30 +78,31 @@ def _workers(queue: str, now: float, freshness: float) -> List[Dict[str, Any]]:
 
 @router.get("/queues")
 async def get_queues(_: User = Depends(require_admin)) -> Dict[str, Any]:
-    """Returns a queue snapshot: depth and backlog, current scaled fleet."""
     now = time.time()
-    freshness = _freshness()
+    settings = settings_manager.get_settings()
+    freshness = float(settings["scaler"]["stale_worker_seconds"])
 
     queues: List[Dict[str, Any]] = []
     totals = {"pending": 0, "claimed": 0, "workers_live": 0, "backlog_seconds": 0.0}
 
-    for q in QUEUE_SECONDS_ESTIMATES:
-        stats = jobs.queue_stats(q)
-        fleet = _workers(q, now, freshness)
+    for q, model in _pools(settings):
+        stats = jobs.queue_stats(q, model)
+        fleet = _workers(q, model, now, freshness)
         row = {
             "queue": q,
+            "model": model,
             "pending": stats["pending"],
             "claimed": stats["claimed"],
             "oldest_pending_age_seconds": stats["oldest_pending_age_seconds"],
             "workers_live": sum(w["state"] != "booting" for w in fleet),
-            "workers_max": _max_workers(q),
+            "workers_max": _max_workers(settings, q, model),
             "est_seconds": QUEUE_SECONDS_ESTIMATES[q],
-            "backlog_seconds": jobs.backlog_seconds(q),
+            "backlog_seconds": jobs.backlog_seconds(q, model),
             "next": [{"id": j["id"], "game_id": j["game_id"], "build_id": j["build_id"],
                       "waiting_seconds": now - j["created_at"], "est_seconds": QUEUE_SECONDS_ESTIMATES[q]}
-                     for j in jobs.pending_jobs_head(q, _NEXT_LIMIT)],
+                     for j in jobs.pending_jobs_head(q, model, _NEXT_LIMIT)],
             "workers": fleet,
-            "stockouts": _stockouts(q, now),
+            "stockouts": _stockouts(q, model, now),
         }
         queues.append(row)
         for k in totals:

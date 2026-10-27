@@ -24,6 +24,14 @@ def calculate_job_cost(exec_seconds: float, usd_per_hour: float) -> int:
     return math.ceil(exec_seconds * rate_micros)
 
 
+def calculate_token_cost(usage: dict, usd_per_mtok: dict) -> int:
+    cached = usage.get("cached_tokens") or 0
+    fresh = (usage.get("prompt_tokens") or 0) - cached
+    micros = (fresh * usd_per_mtok["input"] + cached * usd_per_mtok["cached_input"]
+              + (usage.get("completion_tokens") or 0) * usd_per_mtok["output"])
+    return math.ceil(round(micros, 3))
+
+
 QUEUE_MICRO_ESTIMATES = {
     queue: calculate_job_cost(seconds, QUEUE_USD_PER_HOUR[queue])
     for queue, seconds in QUEUE_SECONDS_ESTIMATES.items()

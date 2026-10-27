@@ -11,13 +11,14 @@ _POD_REFUSAL_KEEP_SECONDS = 30 * _DAY
 
 
 def worker_created(worker_id: str, pod_id: str, queue: str, gpu_type: Optional[str],
-                   usd_per_hour: Optional[float], source: str = "runpod") -> None:
+                   usd_per_hour: Optional[float], source: str = "runpod",
+                   model: Optional[str] = None) -> None:
     now = time.time()
     with platform_db() as conn:
         conn.execute(
-            "INSERT INTO workers (id, queue, gpu_type, source, pod_id, usd_per_hour, started_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (worker_id, queue, gpu_type, source, pod_id, usd_per_hour, now))
+            "INSERT INTO workers (id, queue, model, gpu_type, source, pod_id, usd_per_hour, "
+            "started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (worker_id, queue, model, gpu_type, source, pod_id, usd_per_hour, now))
 
 
 def worker_seen(worker_id: str, queue: str, gpu_type: Optional[str] = None,
@@ -51,42 +52,43 @@ def set_pod_terminated(pod_id: str) -> None:
                      (time.time(), pod_id))
 
 
-def live_workers(queue: str, freshness_seconds: float) -> List[Dict]:
+def live_workers(queue: str, model: Optional[str], freshness_seconds: float) -> List[Dict]:
     with platform_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM workers WHERE queue = ? AND terminated_at IS NULL "
+            "SELECT * FROM workers WHERE queue = ? AND model IS ? AND terminated_at IS NULL "
             "AND registered_at IS NOT NULL AND last_seen_at >= ?",
-            (queue, time.time() - freshness_seconds)).fetchall()
+            (queue, model, time.time() - freshness_seconds)).fetchall()
     return [dict(r) for r in rows]
 
 
-def booting_workers(queue: str) -> List[Dict]:
+def booting_workers(queue: str, model: Optional[str]) -> List[Dict]:
     with platform_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM workers WHERE queue = ? AND terminated_at IS NULL "
-            "AND registered_at IS NULL ORDER BY started_at", (queue,)).fetchall()
+            "SELECT * FROM workers WHERE queue = ? AND model IS ? AND terminated_at IS NULL "
+            "AND registered_at IS NULL ORDER BY started_at", (queue, model)).fetchall()
     return [dict(r) for r in rows]
 
 
-def stale_workers(queue: str, staleness_seconds: float, boot_deadline_seconds: float) -> List[Dict]:
-    """Pod-backed workers presumed dead: stopped checking in, or past the boot deadline."""
+def stale_workers(queue: str, model: Optional[str], staleness_seconds: float,
+                  boot_deadlines: Dict[str, float]) -> List[Dict]:
     now = time.time()
     with platform_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM workers WHERE queue = ? AND terminated_at IS NULL AND pod_id IS NOT NULL "
-            "AND ((registered_at IS NOT NULL AND last_seen_at < ?) "
-            "  OR (registered_at IS NULL AND started_at < ?))",
-            (queue, now - staleness_seconds, now - boot_deadline_seconds)).fetchall()
-    return [dict(r) for r in rows]
+            "SELECT * FROM workers WHERE queue = ? AND model IS ? AND terminated_at IS NULL "
+            "AND pod_id IS NOT NULL AND ((registered_at IS NOT NULL AND last_seen_at < ?) "
+            "  OR registered_at IS NULL)",
+            (queue, model, now - staleness_seconds)).fetchall()
+    return [dict(r) for r in rows if r["registered_at"] is not None
+            or r["started_at"] < now - boot_deadlines.get(r["source"], 0.0)]
 
 
-def terminated_workers_with_pods(queue: str) -> List[Dict]:
+def terminated_workers_with_pods(queue: str, model: Optional[str]) -> List[Dict]:
     with platform_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM workers w WHERE queue = ? AND terminated_at IS NOT NULL "
+            "SELECT * FROM workers w WHERE queue = ? AND model IS ? AND terminated_at IS NOT NULL "
             "AND pod_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workers later_life "
             "WHERE later_life.pod_id = w.pod_id AND later_life.started_at > w.started_at)",
-            (queue,)).fetchall()
+            (queue, model)).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -118,44 +120,47 @@ def pod_lives() -> Dict[str, List[tuple]]:
     return out
 
 
-def _bump_pod_day(conn, queue: str, now: float, refusal_kind: Optional[str]) -> None:
+def _bump_pod_day(conn, queue: str, model: Optional[str], now: float,
+                  refusal_kind: Optional[str]) -> None:
     """The never-pruned daily rollup behind the provider-facing attempt/refusal ratio."""
     day = time.strftime("%Y-%m-%d", time.gmtime(now))
-    conn.execute("INSERT OR IGNORE INTO pod_request_days (queue, day) VALUES (?, ?)", (queue, day))
+    key = (queue, model or "", day)
+    conn.execute("INSERT OR IGNORE INTO pod_request_days (queue, model, day) VALUES (?, ?, ?)", key)
     col = {None: "", "stock": ", stock_refusals = stock_refusals + 1",
            "other": ", other_refusals = other_refusals + 1"}[refusal_kind]
     conn.execute(f"UPDATE pod_request_days SET attempts = attempts + 1{col} "
-                 "WHERE queue = ? AND day = ?", (queue, day))
+                 "WHERE queue = ? AND model = ? AND day = ?", key)
 
 
-def record_pod_created(queue: str) -> None:
+def record_pod_created(queue: str, model: Optional[str]) -> None:
     with platform_db() as conn:
-        _bump_pod_day(conn, queue, time.time(), None)
+        _bump_pod_day(conn, queue, model, time.time(), None)
 
 
-def record_pod_refusal(queue: str, kind: str, attempts: List[Dict], error: str) -> None:
+def record_pod_refusal(queue: str, model: Optional[str], kind: str, attempts: List[Dict],
+                       error: str) -> None:
     now = time.time()
     with platform_db() as conn:
-        _bump_pod_day(conn, queue, now, kind)
+        _bump_pod_day(conn, queue, model, now, kind)
         conn.execute("DELETE FROM pod_refusals WHERE created_at < ?",
                      (now - _POD_REFUSAL_KEEP_SECONDS,))
         conn.execute(
-            "INSERT INTO pod_refusals (queue, kind, attempts, error, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (queue, kind, json.dumps(attempts, ensure_ascii=False), error, now))
+            "INSERT INTO pod_refusals (queue, model, kind, attempts, error, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (queue, model, kind, json.dumps(attempts, ensure_ascii=False), error, now))
 
 
-def pod_stockout_stats(queue: str, now: float) -> Dict:
+def pod_stockout_stats(queue: str, model: Optional[str], now: float) -> Dict:
     with platform_db() as conn:
         counts = conn.execute(
             "SELECT SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) AS last_1h, "
             "SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) AS last_24h, "
-            "COUNT(*) AS last_7d "
-            "FROM pod_refusals WHERE queue = ? AND kind = 'stock' AND created_at >= ?",
-            (now - 3600, now - _DAY, queue, now - 7 * _DAY)).fetchone()
+            "COUNT(*) AS last_7d FROM pod_refusals "
+            "WHERE queue = ? AND model IS ? AND kind = 'stock' AND created_at >= ?",
+            (now - 3600, now - _DAY, queue, model, now - 7 * _DAY)).fetchone()
         last = conn.execute(
-            "SELECT created_at FROM pod_refusals WHERE queue = ? AND kind = 'stock' "
-            "ORDER BY id DESC LIMIT 1", (queue,)).fetchone()
+            "SELECT created_at FROM pod_refusals WHERE queue = ? AND model IS ? AND kind = 'stock' "
+            "ORDER BY id DESC LIMIT 1", (queue, model)).fetchone()
     return {
         "last_1h": counts["last_1h"] or 0,
         "last_24h": counts["last_24h"] or 0,

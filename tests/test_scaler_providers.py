@@ -1,5 +1,3 @@
-"""Providers: each one's ladder order and launch mapping, the merge, and what counts as stock."""
-
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,23 +9,23 @@ from scaler.providers import (Ec2Provider, Launched, Machine, ProviderError, Run
 from scaler.runpod_client import RunPodError
 
 WK, SE = "NVIDIA RTX PRO 6000 Blackwell Workstation", "NVIDIA RTX PRO 6000 Blackwell Server"
-RP = {"cloud_type": "SECURE", "network_volume_id": "vol1",
-      "queues": {"llm": {"template_id": "tpl1", "gpu_type_ids": [WK, SE],
-                         "allowed_cuda_versions": ["13.0"]}}}
-AWS = {"security_group": "sg", "instance_profile": "profile",
-       "queues": {"llm": {"instance_types": ["g7e.2xlarge"], "markets": ["spot"],
-                          "amis": {"eu-north-1": "ami-eu", "us-west-2": "ami-us"}}}}
+RP = {"cloud_type": "SECURE", "network_volume_id": "vol1"}
+RP_BLOCK = {"template_id": "tpl1", "gpu_type_ids": [WK, SE], "allowed_cuda_versions": ["13.0"]}
+AWS = {"security_group": "sg", "instance_profile": "profile"}
+AWS_BLOCK = {"instance_types": ["g7e.2xlarge"], "markets": ["spot"],
+             "amis": {"eu-north-1": "ami-eu", "us-west-2": "ami-us"}}
 
 
-def _runpod(block=RP):
+def _runpod():
     client = MagicMock()
     client.gpu_prices.return_value = {WK: 1.89, SE: 2.19}
-    return RunPodProvider(client, lambda: {"runpod": block}), client
+    return RunPodProvider(client, lambda: {"runpod": RP}), client
 
 
-def _ec2(block=AWS):
+def _ec2(settings=None):
     client = MagicMock()
-    return Ec2Provider(client, lambda: {"aws": block}), client
+    settings = settings or {"aws": AWS, "llm": {}}
+    return Ec2Provider(client, lambda: settings), client
 
 
 def test_merge_takes_the_cheapest_head_and_never_reorders_inside_a_provider():
@@ -37,42 +35,43 @@ def test_merge_takes_the_cheapest_head_and_never_reorders_inside_a_provider():
 
 
 def test_runpod_ladder_is_the_preferred_card_alone_then_the_list_volume_by_volume():
-    block = {**RP, "queues": {"llm": {**RP["queues"]["llm"],
-                                      "network_volume_ids": ["vol-eu", "vol-us"]}}}
-    provider, _ = _runpod(block)
+    provider, _ = _runpod()
+    block = {**RP_BLOCK, "network_volume_ids": ["vol-eu", "vol-us"]}
     assert [(r.ask["volume"], r.ask["gpu_type_ids"], r.usd_per_hour)
-            for r in provider.rungs("llm")] == [
+            for r in provider.rungs(block)] == [
         ("vol-eu", [WK], 1.89), ("vol-eu", [WK, SE], 2.19),
         ("vol-us", [WK], 1.89), ("vol-us", [WK, SE], 2.19)]
-    assert provider.rungs("comfy") == []
 
 
-def test_a_queue_with_policy_but_no_cards_is_served_only_by_the_other_providers():
-    block = {**RP, "queues": {**RP["queues"], "decide": {"max_workers": 1, "boot_seconds": 200}}}
-    provider, client = _runpod(block)
-    assert provider.rungs("decide") == []
+def test_a_block_with_host_facts_but_no_machines_is_served_only_by_the_other_providers():
+    provider, client = _runpod()
+    assert provider.rungs({"boot_seconds": 200}) == []
     client.gpu_prices.assert_not_called()
+    ec2, ec2_client = _ec2()
+    assert ec2.rungs({"boot_seconds": 200}) == []
+    ec2_client.offers.assert_not_called()
 
 
 def test_runpod_with_no_prices_still_offers_its_rungs_last():
     provider, client = _runpod()
     client.gpu_prices.side_effect = RunPodError("graphql down")
-    rungs = provider.rungs("llm")
+    rungs = provider.rungs(RP_BLOCK)
     assert [r.usd_per_hour for r in rungs] == [float("inf")] * 2
     assert merge_ladders([rungs, [Rung("aws", 4.85, {})]])[0].provider == "aws"
 
 
-def test_runpod_launch_sends_the_queue_block_and_reads_the_pods_own_price():
+def test_runpod_launch_sends_the_pools_block_and_reads_the_pods_own_price():
     provider, client = _runpod()
     client.create_pod.return_value = {"id": "pod1", "cost": 1.91, "gpu": {"id": WK}}
-    rung = provider.rungs("llm")[0]
-    assert provider.launch(rung, "gs-llm-a1", {"CP_URL": "u"}, "w1") == Launched("pod1", WK, 1.91)
+    rung = provider.rungs(RP_BLOCK)[0]
+    assert provider.launch(rung, RP_BLOCK, "gs-llm-a1", {"CP_URL": "u"}, "w1") == Launched(
+        "pod1", WK, 1.91)
     client.create_pod.assert_called_once_with(
         name="gs-llm-a1", template_id="tpl1", gpu_type_ids=[WK], network_volume_id="vol1",
         env={"CP_URL": "u"}, args="--worker-id w1", cloud_type="SECURE",
         allowed_cuda_versions=["13.0"])
     client.create_pod.return_value = {"id": "pod2"}
-    assert provider.launch(rung, "n", {}, "w2") == Launched("pod2", None, None)
+    assert provider.launch(rung, RP_BLOCK, "n", {}, "w2") == Launched("pod2", None, None)
 
 
 @pytest.mark.parametrize("error,stock", [
@@ -86,7 +85,7 @@ def test_runpod_refusal_is_stock_only_by_its_wording(error, stock):
     provider, client = _runpod()
     client.create_pod.side_effect = RunPodError(error)
     with pytest.raises(ProviderError) as e:
-        provider.launch(provider.rungs("llm")[0], "n", {}, "w")
+        provider.launch(provider.rungs(RP_BLOCK)[0], RP_BLOCK, "n", {}, "w")
     assert e.value.stock is stock
 
 
@@ -100,11 +99,10 @@ def test_runpod_lists_only_machines_under_the_prefix():
 def test_ec2_ladder_is_the_clients_offers_over_the_regions_that_have_an_ami():
     provider, client = _ec2()
     client.offers.return_value = [Offer("eu-north-1", "eu-north-1a", "g7e.2xlarge", "spot", 1.37)]
-    assert provider.rungs("llm") == [Rung("aws", 1.37, {
-        "queue": "llm", "region": "eu-north-1", "zone": "eu-north-1a",
+    assert provider.rungs(AWS_BLOCK) == [Rung("aws", 1.37, {
+        "region": "eu-north-1", "zone": "eu-north-1a",
         "instance_type": "g7e.2xlarge", "market": "spot", "usd_per_hour": 1.37})]
-    client.offers.assert_called_once_with(AWS["queues"]["llm"]["amis"], ["g7e.2xlarge"], ["spot"])
-    assert provider.rungs("comfy") == []
+    client.offers.assert_called_once_with(AWS_BLOCK["amis"], ["g7e.2xlarge"], ["spot"])
 
 
 def test_ec2_launch_tells_the_box_who_it_is_and_the_id_carries_the_region():
@@ -112,7 +110,8 @@ def test_ec2_launch_tells_the_box_who_it_is_and_the_id_carries_the_region():
     offer = Offer("us-west-2", "us-west-2c", "g7e.2xlarge", "spot", 2.62)
     client.offers.return_value = [offer]
     client.launch.return_value = "i-0abc"
-    launched = provider.launch(provider.rungs("llm")[0], "gs-llm-a1", {"CP_URL": "u"}, "w1")
+    launched = provider.launch(provider.rungs(AWS_BLOCK)[0], AWS_BLOCK, "gs-llm-a1",
+                               {"CP_URL": "u"}, "w1")
     assert launched == Launched("us-west-2/i-0abc", "g7e.2xlarge", 2.62)
     client.launch.assert_called_once_with(
         offer, "gs-llm-a1", "ami-us",
@@ -121,12 +120,15 @@ def test_ec2_launch_tells_the_box_who_it_is_and_the_id_carries_the_region():
     client.terminate.assert_called_once_with("us-west-2", "i-0abc")
 
 
-def test_ec2_lists_every_ami_region_once_under_region_qualified_ids():
-    provider, client = _ec2()
+def test_ec2_lists_every_region_any_pool_has_an_ami_in_once_under_region_qualified_ids():
+    entry = {"model": "m", "n_ctx": 1, "self_hosted": {"providers": {"aws": AWS_BLOCK}}}
+    provider, client = _ec2({
+        "aws": {**AWS, "queues": {"comfy": {"amis": {"us-east-1": "ami-c", "eu-north-1": "x"}}}},
+        "llm": {"qwen-flash-next": entry, "local": {"model": "m", "n_ctx": 1, "local_gpu": {}}}})
     client.list_instances.return_value = [
         Instance("i-1", "eu-north-1", "eu-north-1a", "gs-llm-a", "g7e.2xlarge", "spot", 0.0)]
     assert provider.machines("gs-") == [Machine("eu-north-1/i-1", "gs-llm-a")]
-    client.list_instances.assert_called_once_with(["eu-north-1", "us-west-2"], "gs-")
+    client.list_instances.assert_called_once_with(["eu-north-1", "us-east-1", "us-west-2"], "gs-")
 
 
 @pytest.mark.parametrize("raised,stock", [
@@ -138,5 +140,5 @@ def test_ec2_refusal_carries_whether_it_was_stock(raised, stock):
     client.offers.return_value = [Offer("eu-north-1", "eu-north-1a", "g7e.2xlarge", "spot", 1.37)]
     client.launch.side_effect = raised
     with pytest.raises(ProviderError) as e:
-        provider.launch(provider.rungs("llm")[0], "n", {}, "w")
+        provider.launch(provider.rungs(AWS_BLOCK)[0], AWS_BLOCK, "n", {}, "w")
     assert e.value.stock is stock

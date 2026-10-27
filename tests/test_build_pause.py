@@ -1,6 +1,6 @@
 import pytest
 
-from db import errors, games, jobs
+from db import errors, games, jobs, workers
 from maestro.codegen import build_chain, build_state, build_steps, design
 from maestro.codegen.build_state import BuildCursor
 from maestro.state import RunState
@@ -57,7 +57,7 @@ def _game(run_id="g1", *, stage="building", status="running", step=3, playable=F
 
 def _turn(run_id, bid):
     return jobs.enqueue_job("llm", {}, game_id=run_id, build_id=bid,
-                            metadata={"stage": "build", "run_id": run_id, "build_id": bid})
+                            metadata={"stage": "build", "run_id": run_id, "build_id": bid}, model="qwen-flash-next")
 
 
 def _art(run_id, bid):
@@ -83,9 +83,10 @@ def test_a_turn_claimed_before_the_pause_keeps_its_step_and_lands(tmp_runs, even
                                                                   monkeypatch):
     bid = _game()
     turn = _turn("g1", bid)
+    workers.worker_created("w1", None, "llm", None, 0.99, model="qwen-flash-next")
     jobs.claim_job("llm", "w1", 600)
 
-    def applies(spec, run_dir, tools, cursor, result, error=None):
+    def applies(model, spec, run_dir, tools, cursor, result, error=None):
         cursor.history.append({"role": "tool", "content": "ok"})
         return build_steps.Infer([], [], 100, report="wrote index.html")
     monkeypatch.setattr(build_chain.build_steps, "step", applies)
@@ -96,7 +97,7 @@ def test_a_turn_claimed_before_the_pause_keeps_its_step_and_lands(tmp_runs, even
 
     cursor = build_state.load("g1")
     assert cursor.step == 3 and cursor.history[-1]["content"] == "ok"
-    assert jobs.queue_has_work("llm") is False
+    assert jobs.queue_has_work("llm", "w1") is False
     assert [k for k, _ in events] == ["build_paused", "build_step"]
 
 
@@ -152,7 +153,8 @@ def test_a_paused_game_admits_no_new_job_on_any_queue(tmp_runs, events, staged):
     build_chain.pause("g1")
     for queue in ("llm", "comfy", "decide"):
         with pytest.raises(errors.GamePaused):
-            jobs.enqueue_job(queue, {}, game_id="g1", build_id=bid)
+            jobs.enqueue_job(queue, {}, game_id="g1", build_id=bid,
+                             model="qwen-flash-next" if queue == "llm" else None)
 
 
 @pytest.mark.parametrize("status", ["paused", "failed", "succeeded", "held"])
@@ -169,10 +171,10 @@ def test_resume_re_sends_the_turn_the_pause_cancelled(tmp_runs, events, staged, 
     sent = []
     monkeypatch.setattr(build_chain, "build_tools", lambda rs, build_id: None)
     monkeypatch.setattr(build_chain.build_steps, "step",
-                        lambda spec, run_dir, tools, cursor, result, error=None: build_steps.Infer(
+                        lambda model, spec, run_dir, tools, cursor, result, error=None: build_steps.Infer(
                             [], [], 100, report="re-sent" if result is None else "applied"))
     monkeypatch.setattr(build_chain, "_enqueue_turn",
-                        lambda run_id, cursor, inf: sent.append(inf.report) or True)
+                        lambda run_id, cursor, inf, conn: sent.append(inf.report) or True)
     events.clear()
 
     assert build_chain.resume("g1") is True
@@ -218,7 +220,7 @@ def _owned(owner_id, *, status="running"):
     bid = games.create_build("g1", kind="design")
     games.build_started(bid)
     job = jobs.enqueue_job("llm", {"messages": []}, game_id="g1", build_id=bid,
-                           metadata={"stage": "design", "run_id": "g1"})
+                           metadata={"stage": "design", "run_id": "g1"}, model="qwen-flash-next")
     games.move("g1", status, "designing")
     return job
 

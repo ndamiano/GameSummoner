@@ -193,10 +193,9 @@ def test_running_out_of_compute_mid_build_stages_what_was_made(tmp_runs, seen, m
     def _refuse(*a, **k):
         raise build_chain.errors.InsufficientCompute(rid, 0, 1)
     monkeypatch.setattr(build_chain.jobs, "enqueue_job", _refuse)
-    monkeypatch.setattr(build_chain, "get_connector", lambda: type(
-        "C", (), {"build_llm_job": lambda self, *a: ({}, "m")})())
+    conn = type("C", (), {"build_llm_job": lambda self, *a: ({}, "m")})()
     assert build_chain._enqueue_turn(rid, cursor, build_chain.build_steps.Infer(
-        messages=[], schemas=[], max_tokens=1, report="")) is False
+        messages=[], schemas=[], max_tokens=1, report=""), conn) is False
     assert _where(rid) == ("building", "failed") and seen["staged"] == [rid]
     assert seen["payloads"][0]["error"].startswith("compute exhausted")
 

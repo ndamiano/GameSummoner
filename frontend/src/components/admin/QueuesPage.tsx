@@ -106,7 +106,9 @@ const QueueCard: React.FC<{ row: QueueRow, now: number }> = ({ row, now }) => {
     return (
         <div className="bg-panel border border-edge rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between">
-                <span className="text-white font-semibold text-sm capitalize">{row.queue}</span>
+                <span className="text-white font-semibold text-sm">
+                    <span className="capitalize">{row.queue}</span>{row.model && <span className="font-mono"> · {row.model}</span>}
+                </span>
                 <span className={`text-xs font-mono ${active ? 'text-wait' : 'text-slate'}`}>
                     {row.pending} pending · {row.claimed} claimed
                 </span>
@@ -160,7 +162,7 @@ const QueuesPage: React.FC = () => {
             </div>
 
             <div className="grid gap-3">
-                {data.queues.map(q => <QueueCard key={q.queue} row={q} now={fetchedAt} />)}
+                {data.queues.map(q => <QueueCard key={`${q.queue}-${q.model}`} row={q} now={fetchedAt} />)}
             </div>
 
             <div className="bg-ink border border-edge rounded-lg p-4">

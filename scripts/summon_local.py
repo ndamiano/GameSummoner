@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PYTHON = str(ROOT / "venv" / "bin" / "python")
 sys.path.insert(0, str(ROOT / "src"))
 
+from config import llm_models
 from db import connection
 from maestro.codegen import build_state
 
@@ -177,12 +178,14 @@ class LocalBackend:
 
     def queues(self) -> dict:
         with connection.platform_db() as c:
-            rows = c.execute("SELECT queue, status, COUNT(*) FROM jobs "
-                             "WHERE status IN ('pending', 'claimed') GROUP BY queue, status").fetchall()
-        out = {}
-        for queue, status, n in rows:
-            running, waiting = out.get(queue, (0, 0))
-            out[queue] = (running + n, waiting) if status == "claimed" else (running, waiting + n)
+            rows = c.execute("SELECT queue, model, status, COUNT(*) FROM jobs "
+                             "WHERE status IN ('pending', 'claimed') "
+                             "GROUP BY queue, model, status").fetchall()
+        out = {f"llm {name}": (0, 0) for name in llm_models.entries()}
+        for queue, model, status, n in rows:
+            pool = f"{queue} {model}" if model else queue
+            running, waiting = out.get(pool, (0, 0))
+            out[pool] = (running + n, waiting) if status == "claimed" else (running, waiting + n)
         return out
 
     def summon(self, request: str, started) -> bool:

@@ -1,10 +1,4 @@
-"""LLM calls for worldgen, routed through maestro's `llm` queue.
-
-Maestro has one path to an inference server: `llm_clients.connector.get_connector()`.
-This module runs worldgen's tool loop against that queue rather than a directly-dialed
-provider; there is no per-harness endpoint because the queue's worker decides which
-server answers a call.
-"""
+"""LLM calls for worldgen: its tool loop over the `llm` queue, whose worker picks the server."""
 from __future__ import annotations
 
 import base64
@@ -15,7 +9,6 @@ from typing import Any, Sequence
 
 from pydantic import BaseModel, ConfigDict
 
-from config.settings_manager import settings_manager
 from llm_clients.connector import LLMConnector
 
 from . import WORLD_JOB_TIMEOUT
@@ -23,24 +16,19 @@ from .llm_tools import Tool, as_tool, tool
 
 MAX_TOOL_ROUNDS = 10
 
-_world_connector: LLMConnector | None = None
+_world_connectors: dict[str, LLMConnector] = {}
 
 
-def _get_connector() -> LLMConnector:
-    """A worldgen-owned connector, never the shared `get_connector()` singleton: that one is
-    cached with `workqueue.job_timeout_seconds` (900s), too short for a job waiting behind a
-    model swap plus another queue draining."""
-    global _world_connector
-    if _world_connector is None:
-        llm = settings_manager.get_settings().get("llm") or {}
-        _world_connector = LLMConnector(
-            model=llm.get("model", "default"),
+def _get_connector(name: str) -> LLMConnector:
+    """Not the shared connector: its 900 s job timeout is shorter than a wait behind a model swap."""
+    if name not in _world_connectors:
+        _world_connectors[name] = LLMConnector.for_entry(
+            name,
             # No output cap: a worldgen prompt is a transcript plus several renders, and a cap
             # that is most of the window leaves the input the smaller half of it.
             max_tokens=None,
-            reasoning=llm.get("reasoning"),
             job_timeout_seconds=WORLD_JOB_TIMEOUT)
-    return _world_connector
+    return _world_connectors[name]
 
 
 @dataclass
@@ -184,7 +172,7 @@ class LLMHarness:
         schema = [t.to_json_schema() for t in tool_list]
         msgs = self._build(prompt, system)
         rounds = max_rounds if max_rounds is not None else self.max_tool_rounds
-        connector = _get_connector()
+        connector = _get_connector("qwen-flash-next")
 
         def ask() -> Response:
             return _to_response(connector.generate_with_tools(

@@ -25,13 +25,13 @@ def run(tmp_path, monkeypatch):
     monkeypatch.setattr(maestro.state, "resolve_base_path", lambda input_path=None: tmp_path)
     # A window small enough that a couple of file writes crosses it, so a test can drive a real
     # compaction instead of describing one.
-    monkeypatch.setattr(build_steps, "_n_ctx", lambda: 2900)
+    monkeypatch.setattr(build_steps, "_n_ctx", lambda model: 2900)
     user = store.create_user("alice", "pw-pass1234", role="admin", email="alice@example.com")
     run_id = create_run(user.id)
     RunState(run_id).write_spec({"request": "make a game", "title": "Moon Miner"})
     games.charge_game(run_id, 1, 1_000_000)
     games.move(run_id, "paused", "building")
-    workers.worker_created("w1", None, "llm", None, 0.99)
+    workers.worker_created("w1", None, "llm", None, 0.99, model="qwen-flash-next")
     return run_id
 
 
@@ -115,7 +115,7 @@ def test_every_request_the_build_sent_replays_from_the_log(run):
 
 def test_a_compaction_records_the_rounds_it_dropped_and_its_note(run, monkeypatch):
     # A window too small to hold even two rounds of stubs, so the only way to make room is to drop.
-    monkeypatch.setattr(build_steps, "_n_ctx", lambda: 300)
+    monkeypatch.setattr(build_steps, "_n_ctx", lambda model: 300)
     build_id = build_chain.kickoff(run)
     _land(run, build_id, _reply([_write("index.html", 3000)]))
     _land(run, build_id, _reply([_write("game.js", 3000)], prompt_tokens=3000))

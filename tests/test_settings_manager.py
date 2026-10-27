@@ -1,14 +1,16 @@
 import json
 from pathlib import Path
 
-from config.settings_manager import _merge, settings_manager
+import pytest
+
+from config.settings_manager import _merge, settings_manager, validate_llm
 
 
 def test_merge_fills_keys_the_file_omits():
-    defaults = {"working_directory": "outputs", "llm": {"model": "m", "n_ctx": 32768}}
-    merged = _merge(defaults, {"llm": {"model": "other"}})
+    defaults = {"working_directory": "outputs", "workqueue": {"token": "", "lease_seconds": 120}}
+    merged = _merge(defaults, {"workqueue": {"token": "t"}})
     assert merged["working_directory"] == "outputs"
-    assert merged["llm"] == {"model": "other", "n_ctx": 32768}   # block merged, not replaced
+    assert merged["workqueue"] == {"token": "t", "lease_seconds": 120}
 
 
 def test_merge_lets_the_file_win():
@@ -23,5 +25,37 @@ def test_example_settings_yield_every_key_callers_subscript():
         (Path(__file__).parent.parent / "src" / "config" / "settings.example.json").read_text())
     merged = _merge(settings_manager.defaults, example)
     assert merged["working_directory"]
-    assert merged["llm"]["n_ctx"]
+    validate_llm(merged["llm"])
+    assert merged["llm"]["qwen-flash-next"]["n_ctx"]
+    assert merged["scaler"]["max_workers"]
 
+
+PRICES = {"input": 0.28, "cached_input": 0.028, "output": 0.42}
+SELF_HOSTED = {"model": "m", "n_ctx": 131072, "self_hosted": {"providers": {"runpod": {}, "aws": {}}}}
+
+
+@pytest.mark.parametrize("name,entry,error", [
+    ("qwen-flash-next", SELF_HOSTED, None),
+    ("deepseek-4.1", {"model": "d", "n_ctx": 1, "api": {"base_url": "u", "usd_per_mtok": PRICES}},
+     None),
+    ("local", {"model": "l", "n_ctx": 1, "local_gpu": {}}, None),
+    ("none-of-them", {"model": "m", "n_ctx": 1}, "exactly one of"),
+    ("two-of-them", {**SELF_HOSTED, "local_gpu": {}}, "exactly one of"),
+    ("Qwen_Flash", SELF_HOSTED, "a name is"),
+    ("a" * 33, SELF_HOSTED, "a name is"),
+    ("no-model", {"n_ctx": 1, "local_gpu": {}}, "needs model and n_ctx"),
+    ("no-window", {"model": "m", "local_gpu": {}}, "needs model and n_ctx"),
+    ("unpriced", {"model": "d", "n_ctx": 1, "api": {"base_url": "u"}}, "usd_per_mtok"),
+    ("half-priced", {"model": "d", "n_ctx": 1,
+                     "api": {"base_url": "u", "usd_per_mtok": {"input": 1, "output": 1}}},
+     "usd_per_mtok"),
+    ("no-url", {"model": "d", "n_ctx": 1, "api": {"usd_per_mtok": PRICES}}, "base_url"),
+    ("gcp", {**SELF_HOSTED, "self_hosted": {"providers": {"gcp": {}}}}, "unknown providers"),
+])
+def test_an_llm_entry_is_checked_at_settings_load(name, entry, error):
+    if error is None:
+        validate_llm({name: entry})
+        return
+    with pytest.raises(ValueError, match=error) as e:
+        validate_llm({name: entry})
+    assert f"llm.{name}" in str(e.value)

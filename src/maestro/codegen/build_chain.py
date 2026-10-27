@@ -13,8 +13,9 @@ import time
 from contextlib import contextmanager
 from typing import Dict, Optional
 
+from config.llm_models import UnknownModel
 from db import errors, games, jobs
-from llm_clients.connector import get_connector
+from llm_clients.connector import LLMConnector, get_connector
 from maestro import shares
 from maestro.codegen import (
     artifact_screen,
@@ -249,7 +250,12 @@ def _advance_locked(run_id: str, result: Optional[Dict], landed: Optional[Dict],
     if paused and result is None:
         return
     tools = build_tools(rs, cursor.build_id)
-    outcome = build_steps.step(rs.read_spec(), rs.run_dir, tools, cursor, result,
+    try:
+        conn = get_connector("qwen-flash-next")
+    except UnknownModel as e:
+        _finalize(run_id, rs, cursor, ok=False, error=str(e))
+        return
+    outcome = build_steps.step(conn.entry, rs.read_spec(), rs.run_dir, tools, cursor, result,
                                error=(landed or {}).get("error"))
 
     if isinstance(outcome, build_steps.Infer):
@@ -265,15 +271,15 @@ def _advance_locked(run_id: str, result: Optional[Dict], landed: Optional[Dict],
         if not cursor.meta_logged:
             turn_log.append_meta(
                 rs.run_dir, run_id=run_id, build_id=cursor.build_id, system=cursor.system,
-                tools=outcome.schemas, model=get_connector().model_name,
-                max_tokens=outcome.max_tokens, reasoning=get_connector().reasoning,
+                tools=outcome.schemas, model=conn.entry,
+                max_tokens=outcome.max_tokens, reasoning=conn.reasoning,
                 # The control plane enqueues the canonical chat shape and nothing else
                 # (llm_clients/wire.py); the record says so rather than a reader inferring it from
                 # whatever `llm.api` happens to be the day the log is read.
                 wire="chat")
             cursor.meta_logged = True
         build_state.save(cursor)
-        if _enqueue_turn(run_id, cursor, outcome):
+        if _enqueue_turn(run_id, cursor, outcome, conn):
             _emit_step(run_id, cursor, outcome.report)
         return
 
@@ -368,8 +374,8 @@ def _post_finalize(run_id: str, build_id: str) -> None:
         archive.archive(run_id)
 
 
-def _enqueue_turn(run_id: str, cursor: BuildCursor, inf: "build_steps.Infer") -> bool:
-    conn = get_connector()
+def _enqueue_turn(run_id: str, cursor: BuildCursor, inf: "build_steps.Infer",
+                  conn: LLMConnector) -> bool:
     payload, model = conn.build_llm_job(inf.messages, inf.schemas, inf.max_tokens)
 
     def _enqueue():

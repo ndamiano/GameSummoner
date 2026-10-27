@@ -46,7 +46,10 @@ fresh=0
 import json, sys
 path, url, llm, decide, comfy, fresh, runs = sys.argv[1:]
 d = json.load(open(path))
-d.setdefault("llm", {})["model"] = llm
+entry = d.setdefault("llm", {}).get("qwen-flash-next") or {"n_ctx": 32768, "max_tokens": 50000,
+                                                           "reasoning": "medium", "slots": 1}
+kept = {k: v for k, v in entry.items() if k not in ("self_hosted", "api")}
+d["llm"]["qwen-flash-next"] = {**kept, "model": llm, "local_gpu": entry.get("local_gpu") or {}}
 if fresh == "1":
     d["working_directory"] = runs
 d.setdefault("local", {})["llama_swap"] = {"url": url, "decide": decide, "comfy": comfy}

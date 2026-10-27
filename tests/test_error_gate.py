@@ -323,7 +323,7 @@ def test_probe_asks_with_the_screenshot_and_the_prompt(monkeypatch):
         def generate_with_tools(self, messages, tools, max_tokens=None, reasoning=None):
             calls["messages"] = messages
             return {"choices": [{"message": {"content": '{"targets": [{"label": "GO", "x": 1, "y": 2}], "keys": []}'}}]}
-    monkeypatch.setattr(error_gate, "get_connector", lambda: FakeConn())
+    monkeypatch.setattr(error_gate, "get_connector", lambda name: FakeConn())
     assert error_gate._targets(b"\x89PNG fake") == [("click", (1, 2))]
     user = calls["messages"][-1]["content"]
     assert user[0]["type"] == "text" and "1280 by 720" in user[0]["text"]
@@ -334,5 +334,5 @@ def test_probe_falls_back_to_the_fixed_poke_when_the_model_cannot_be_asked(monke
     class DeadConn:
         def generate_with_tools(self, *a, **k):
             raise RuntimeError("no worker")
-    monkeypatch.setattr(error_gate, "get_connector", lambda: DeadConn())
+    monkeypatch.setattr(error_gate, "get_connector", lambda name: DeadConn())
     assert error_gate._targets(b"\x89PNG fake") is None

@@ -1,6 +1,5 @@
-"""What the autoscaler asks of a GPU provider: its machines, a priced ladder of rungs in its own
-order of preference, launch one, terminate one. Providers price but none knows its stock, so the
-first rung of the merged ladder that takes a launch is the cheapest available."""
+"""What the autoscaler asks of a GPU provider. None knows its stock, so a launch walks the merged
+ladder, cheapest first, until a rung takes."""
 
 from dataclasses import asdict, dataclass
 import logging
@@ -9,6 +8,7 @@ from typing import Callable, Dict, List, Optional, Protocol
 import requests
 
 from scaler.ec2_client import Ec2Client, Ec2Error, Offer
+from scaler.pools import pools
 from scaler.runpod_client import RunPodClient, RunPodError
 
 logger = logging.getLogger("scaler")
@@ -51,8 +51,9 @@ class Provider(Protocol):
     name: str
 
     def machines(self, prefix: str) -> List[Machine]: ...
-    def rungs(self, queue: str) -> List[Rung]: ...
-    def launch(self, rung: Rung, name: str, env: Dict[str, str], worker_id: str) -> Launched: ...
+    def rungs(self, block: Dict) -> List[Rung]: ...
+    def launch(self, rung: Rung, block: Dict, name: str, env: Dict[str, str],
+               worker_id: str) -> Launched: ...
     def terminate(self, machine_id: str) -> None: ...
 
 
@@ -89,11 +90,10 @@ class RunPodProvider:
         return [Machine(p["id"], p["name"]) for p in pods
                 if (p.get("name") or "").startswith(prefix)]
 
-    def rungs(self, queue: str) -> List[Rung]:
+    def rungs(self, block: Dict) -> List[Rung]:
         """Per volume the head card alone, then the list, priced at its dearest card or last"""
         rp = self._block()
-        qcfg = (rp.get("queues") or {}).get(queue) or {}
-        ids = list(qcfg.get("gpu_type_ids") or [])
+        ids = list(block.get("gpu_type_ids") or [])
         if not ids:
             return []
         try:
@@ -102,24 +102,24 @@ class RunPodProvider:
             logger.warning("runpod prices unavailable, its rungs go last: %s", e)
             prices = {}
         asks = [ids[:1], ids] if len(ids) > 1 else [ids]
-        volumes = qcfg.get("network_volume_ids") or [rp.get("network_volume_id", "")]
+        volumes = block.get("network_volume_ids") or [rp.get("network_volume_id", "")]
         return [Rung(self.name, max(prices.get(g, float("inf")) for g in ask),
-                     {"queue": queue, "volume": volume, "gpu_type_ids": ask})
+                     {"volume": volume, "gpu_type_ids": ask})
                 for volume in volumes for ask in asks]
 
-    def launch(self, rung: Rung, name: str, env: Dict[str, str], worker_id: str) -> Launched:
+    def launch(self, rung: Rung, block: Dict, name: str, env: Dict[str, str],
+               worker_id: str) -> Launched:
         rp = self._block()
-        qcfg = rp["queues"][rung.ask["queue"]]
         try:
             pod = self._client.create_pod(
                 name=name,
-                template_id=qcfg["template_id"],
+                template_id=block["template_id"],
                 gpu_type_ids=rung.ask["gpu_type_ids"],
                 network_volume_id=rung.ask["volume"],
                 env=env,
                 args=f"--worker-id {worker_id}",
                 cloud_type=rp.get("cloud_type", "SECURE"),
-                allowed_cuda_versions=qcfg.get("allowed_cuda_versions"),
+                allowed_cuda_versions=block.get("allowed_cuda_versions"),
             )
         except _RUNPOD_ERRORS as e:
             raise ProviderError(str(e), runpod_stock_refusal(str(e))) from e
@@ -146,31 +146,31 @@ class Ec2Provider:
         return self._settings().get("aws") or {}
 
     def machines(self, prefix: str) -> List[Machine]:
-        regions = sorted({region for qcfg in (self._block().get("queues") or {}).values()
-                          for region in qcfg["amis"]})
+        regions = sorted({region for pool in pools(self._settings())
+                          for region in (pool.providers.get(self.name) or {}).get("amis") or {}})
         try:
             return [Machine(f"{i.region}/{i.id}", i.name)
                     for i in self._client.list_instances(regions, prefix)]
         except _EC2_ERRORS as e:
             raise ProviderError(str(e)) from e
 
-    def rungs(self, queue: str) -> List[Rung]:
-        qcfg = (self._block().get("queues") or {}).get(queue)
-        if not qcfg:
+    def rungs(self, block: Dict) -> List[Rung]:
+        if not block.get("amis"):
             return []
         try:
-            offers = self._client.offers(qcfg["amis"], qcfg["instance_types"],
-                                         qcfg.get("markets", ["spot", "on-demand"]))
+            offers = self._client.offers(block["amis"], block["instance_types"],
+                                         block.get("markets", ["spot", "on-demand"]))
         except _EC2_ERRORS as e:
             raise ProviderError(str(e)) from e
-        return [Rung(self.name, o.usd_per_hour, {"queue": queue, **asdict(o)}) for o in offers]
+        return [Rung(self.name, o.usd_per_hour, asdict(o)) for o in offers]
 
-    def launch(self, rung: Rung, name: str, env: Dict[str, str], worker_id: str) -> Launched:
+    def launch(self, rung: Rung, block: Dict, name: str, env: Dict[str, str],
+               worker_id: str) -> Launched:
         aws = self._block()
-        offer = Offer(**{k: v for k, v in rung.ask.items() if k != "queue"})
+        offer = Offer(**rung.ask)
         try:
             instance_id = self._client.launch(
-                offer, name, aws["queues"][rung.ask["queue"]]["amis"][offer.region],
+                offer, name, block["amis"][offer.region],
                 {**env, "WORKER_ID": worker_id, "WORKER_SOURCE": self.name},
                 aws["security_group"], aws["instance_profile"])
         except _EC2_ERRORS as e:

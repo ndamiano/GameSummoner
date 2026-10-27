@@ -14,7 +14,7 @@ STAGES = {"design": "design", "build": "build", "change": "build", "fix": "test"
 LABELS = {"design": "design", "build": "build", "test": "play-test"}
 ENDED = {"running": ("33", "■ stalled"), "succeeded": ("32", "✓ built"),
          "paused": ("33", "■ paused"), "failed": ("31", "✗ failed"), "held": ("33", "■ held")}
-QUEUES = ["llm", "decide", "comfy"]
+QUEUES = ["decide", "comfy"]
 BRAND = ("38;2;242;112;63" if os.environ.get("COLORTERM") in ("truecolor", "24bit")
          else "38;5;209")
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
@@ -242,7 +242,7 @@ class Screen:
 
     def _queue_lines(self) -> list[str]:
         out = [self._c("1", "queues")]
-        for q in QUEUES:
+        for q in [*sorted(set(self.queues) - set(QUEUES)), *QUEUES]:
             running, waiting = self.queues.get(q, (0, 0))
             parts = []
             if running:
