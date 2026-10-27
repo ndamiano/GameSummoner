@@ -256,8 +256,7 @@ avoid, and only one of them announces itself:
 `reasoning_effort`. The Qwen3.8 template takes `none`, `low`, `medium` and `xhigh`; `high` is
 rejected (`reasoning_effort_not_supported`). `none` DISABLES thinking, and a non-thinking build is
 the "something kinda close" arm of `docs/experiments.md` (2026-08-25), so a build server runs at
-`medium` or above. Prod's `LLM_REASONING` default is `none` and ships in the same deploy as the
-wire that forwards it — deploying the wire alone turns prod's thinking off.
+`medium` or above. Each llm entry sets its own.
 
 ### The wire format is the worker's, not a setting
 
