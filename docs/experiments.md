@@ -2666,3 +2666,52 @@ the battery ran with that line, and it now says what is true (Nick: "lying to th
 intentional"), unmeasured.
 
 **Details.** `labs/open-shim/README.md`.
+
+## 2026-10-20 — small decision models in the decide seat (qev-0.8b on CPU, decision-2b-preview on the local 5090 beside Basalt)
+
+Decide runs JEV-27B-VL on a box of its own, ~16 s a chain behind a ~120 s cold boot on prod. A
+~1-2B decision model could ride the llm box or the CPU instead. Both ran the prod `run_chain` on
+the "frogs eating bugs" chain against three JEV runs of the same ask, which agree on every frame
+call.
+
+| Model | Frame calls equal to JEV | Mechanics kept (JEV 20-21) | Screens / HUD / effects / a11y kept (JEV 5/3/3/4) | Chain time |
+|---|---:|---:|---|---:|
+| qev-0.8b, CPU | 6/9 | 1 of 157 | 0 / 0 / 0 / 0 | 56.4 s |
+| decision-2b-preview, 5090 | 4/9 | 2 | 0 / 0 / 0 / 0 | 4.8 s |
+
+The misses read wrong for the ask (open world, no failure, no music). Probabilities are low and
+ranked wrong: qev's mechanics correlate 0.49 with JEV's, accessibility -0.06, so a lower keep
+threshold would not fix it. The wrapper answers obvious questions right (frog eats bugs 0.96-0.98),
+and feeding JEV's own frame into the state changes nothing, so the fault is the model's design
+judgment, not the cascade.
+
+Cotenancy works mechanically: Basalt lent 6.4 GB of expert cache, decision-2b loaded beside it,
+Flash-Next decoded at 151-193 tok/s while lent and 254 after restore (baseline 255).
+
+**Verdict.** Idea failure: neither model's design calls are usable. decision-2b is also cleared for
+evaluation only (unresolved data provenance). Decide stays JEV-27B-VL.
+
+**Details.** `labs/qev-decide/README.md`.
+
+## 2026-10-25 — the play gate's fixed 1.5 s settle after every action
+
+Every play gate action waited a fixed 1.5 s before its screenshot, 15–30 s a gate run, with the
+GPU idle through it. `labs/vision-build/settle_probe.py` replayed the first 20 inputs of 12
+recorded refine sessions (186 actions) and measured when the frame stopped changing (160×90 grey
+mean difference under 1.0 between 100 ms polls):
+
+| Game | Median stop | p90 |
+|---|---:|---:|
+| Catdefense | 214 ms | 245 ms |
+| Skatemall | 440 ms | 662 ms |
+| Farm (constant shimmer) | never | — |
+
+The largest gap between the stopped frame and the 1.5 s frame was 1.56/255. The lab settle (a
+200 ms floor, on to 600 ms only while the frame still changes) then ran every look, refine and UX
+action in the eight pipeline-v2 asks of 2026-10-26, with no judge or player reading a settled
+frame as mid-motion. A watched click went from ~2.0 s to 0.75 s.
+
+**Verdict.** Adopted in `play_gate.py` for each action; the 1.5 s wait after page load stays.
+
+**Details.** `labs/vision-build/README.md`, "settle audit".
+
