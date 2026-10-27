@@ -49,6 +49,11 @@ rsync -az --delete \
   --exclude 'src/config/settings.json' \
   "${REPO_ROOT}/" "${PROD_HOST}:${REMOTE_DIR}/"
 
+REVISION="$(git -C "${REPO_ROOT}" rev-parse --short HEAD)"
+[ -n "$(git -C "${REPO_ROOT}" status --porcelain)" ] && REVISION="${REVISION}-dirty"
+ssh "${PROD_HOST}" "echo '${REVISION}' > '${REMOTE_DIR}/src/REVISION'"
+echo "==> Shipped revision ${REVISION}"
+
 echo "==> Building + restarting the container on ${PROD_HOST}"
 # .env must already exist on the prod box (created once from .env.example — deploy never ships it).
 ssh "${PROD_HOST}" "cd '${REMOTE_DIR}' && test -f .env || { echo 'ERROR: ${REMOTE_DIR}/.env missing — run provision.sh + create .env first' >&2; exit 1; }"

@@ -48,3 +48,4 @@ scratchpad/
 docker/*.tgz
 docker/out/
 labs/
+src/REVISION

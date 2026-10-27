@@ -1,16 +1,5 @@
-"""Which Maestro built this.
-
-A game is evidence about the pipeline that made it, and the pipeline changes several times a week —
-so a build that does not record its own commit is a measurement with no independent variable. There
-is no version number to use instead: nothing here is released, so the commit IS the version.
-
-The DIRTY flag is half the value. A build from an edited tree is not reproducible from any commit,
-and most local experiments run exactly that way; a grade traced to `abc1234-dirty` is a grade whose
-pipeline no longer exists anywhere, which is worth knowing before drawing a line through it.
-
-Resolved once per process — the tree does not change under a running control plane, and a build
-should never pay a subprocess for this.
-"""
+"""Which commit built this: `<short sha>`, with `-dirty` for an edited tree. Prod has no .git, so
+deploy.sh writes the commit to `src/REVISION`."""
 
 import logging
 import subprocess
@@ -20,12 +9,13 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 _REPO = Path(__file__).resolve().parents[2]
+_REVISION = _REPO / "src" / "REVISION"
 
 
 @lru_cache(maxsize=1)
 def maestro_rev() -> str:
-    """`<short sha>` or `<short sha>-dirty`, and `unknown` where git cannot answer — a deploy from a
-    tarball still has to build games."""
+    if _REVISION.is_file():
+        return _REVISION.read_text().strip()
     try:
         sha = subprocess.run(["git", "-C", str(_REPO), "rev-parse", "--short", "HEAD"],
                              capture_output=True, text=True, timeout=5)
