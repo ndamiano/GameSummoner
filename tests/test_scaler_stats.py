@@ -2,7 +2,6 @@
 to its pod."""
 
 
-import pytest
 
 from db import connection, jobs, workers
 from scaler.stats import SqliteStatsSource

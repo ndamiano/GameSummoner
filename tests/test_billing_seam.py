@@ -10,7 +10,7 @@ import pytest
 from auth import cli, store
 from billing import ledger
 from billing.packages import PACKAGES
-from billing.stripe import Checkout, CreditProvider, PurchaseEvent
+from billing.stripe import CreditProvider, PurchaseEvent
 from db import connection
 
 

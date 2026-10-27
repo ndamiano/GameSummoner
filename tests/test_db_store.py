@@ -1,6 +1,5 @@
 """Platform db — games ownership/lifecycle, the charge contract, builds, and the event log."""
 
-import json
 from pathlib import Path
 
 import pytest

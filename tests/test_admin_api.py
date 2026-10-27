@@ -2,7 +2,6 @@
 snapshot covers every queue — the next jobs in claim order and the fleet with what it holds."""
 
 import time
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -129,8 +128,6 @@ def test_a_created_pod_is_booting_until_its_worker_registers(app_client):
 def test_costs_split_a_reused_pod_id_into_its_lives(app_client, monkeypatch):
     from api.routers import admin
     from billing.estimates import calculate_job_cost
-
-    RATE = 0.99
 
     now = time.time()
     day = 86400

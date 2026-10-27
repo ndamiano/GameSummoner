@@ -7,7 +7,6 @@ to draw one rather than left waiting for a file that is never coming.
 """
 
 import base64
-import json
 
 import pytest
 

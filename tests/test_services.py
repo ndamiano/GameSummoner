@@ -6,7 +6,6 @@ local-model turn depends on: `parse_args` (any argument shape → dict). Recover
 wrote as TEXT lives in maestro/tool_calls.py — see test_tool_calls.py.
 """
 
-import pytest
 
 from maestro.services import parse_args, parse_args_checked
 
