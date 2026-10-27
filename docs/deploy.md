@@ -236,7 +236,8 @@ key list in `docs/local_dev.md` "Settings"):
   `pod_request_days`) with the combos tried and the provider's text;
 - `scaler.max_workers` (3, a cap per pool), `scaler.cooldown_seconds` (300),
   `scaler.min_jobs_per_pod` (6: jobs a new pod must be owed when it lands, or it is not worth its
-  boot) — policy, the same for every pool.
+  boot) — policy for every pool, and `scaler.pools.<pool name>` overrides any of the three for
+  one pool.
 - `runpod.queues.<name>` — a non-llm queue's launch config plus its host facts, and an llm
   entry's `self_hosted.providers.runpod` takes the same keys: `template_id`, `gpu_type_ids` (a
   PRIORITY-ORDERED list: the scaler creates with the first entry alone, and retries with the whole list only if RunPod refuses

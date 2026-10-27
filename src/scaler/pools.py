@@ -17,6 +17,11 @@ class Pool:
         return pod_name.rsplit("-", 1)[0] == f"{prefix}-{self.name}"
 
 
+def policy(scaler: Dict, pool: str) -> Dict:
+    shared = {k: v for k, v in scaler.items() if k != "pools"}
+    return {**shared, **(scaler.get("pools") or {}).get(pool, {})}
+
+
 def pools(settings: Dict) -> List[Pool]:
     out = [Pool("llm", name, entry["self_hosted"].get("providers") or {}, entry)
            for name, entry in settings["llm"].items() if "self_hosted" in entry]

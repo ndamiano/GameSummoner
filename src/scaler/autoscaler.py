@@ -15,7 +15,7 @@ from scaler.policy import (
     TerminatePod,
     decide,
 )
-from scaler.pools import Pool, pools
+from scaler.pools import Pool, policy, pools
 from scaler.providers import Machine, Provider, ProviderError, merge_ladders
 from scaler.stats import StatsSource
 
@@ -87,16 +87,17 @@ class Autoscaler:
             qpods = [PodInfo(p.id, p.name, now - created.get(p.id, self._pod_first_seen[p.id]),
                              deadlines.get(self._owner[p.id].name, 0.0))
                      for p in pods if pool.owns(p.name, pod_prefix)]
-            policy = ScalingPolicy(
-                max_workers=scaler["max_workers"],
-                cooldown_seconds=scaler["cooldown_seconds"],
+            own = policy(scaler, pool.name)
+            scaling = ScalingPolicy(
+                max_workers=own["max_workers"],
+                cooldown_seconds=own["cooldown_seconds"],
                 boot_seconds=max((block.get("boot_seconds", 150)
                                   for block in pool.providers.values()), default=0.0),
                 assumed_job_seconds=QUEUE_SECONDS_ESTIMATES[pool.queue],
-                min_jobs_per_pod=scaler["min_jobs_per_pod"],
+                min_jobs_per_pod=own["min_jobs_per_pod"],
             )
             actions = decide(
-                pool.name, policy,
+                pool.name, scaling,
                 self._stats.queue_stats(pool.queue, pool.model),
                 self._stats.live_workers(pool.queue, pool.model, staleness),
                 self._stats.stale_workers(pool.queue, pool.model, staleness, deadlines),

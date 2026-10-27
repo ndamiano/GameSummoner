@@ -190,6 +190,16 @@ def test_the_add_a_machine_math_takes_the_slower_providers_boot(boots, adds):
     assert p.launch.called is adds
 
 
+@pytest.mark.parametrize("pools,adds", [({}, True), ({"llm-qwen-flash-next": {"max_workers": 1}}, False),
+                                         ({"comfy": {"max_workers": 1}}, True)])
+def test_a_pools_own_cap_overrides_the_shared_one_and_no_other_pools(pools, adds):
+    p = _provider("runpod", [1.89], [Machine("p0", "gs-llm-qwen-flash-next-p0")])
+    a = _scaler(p)
+    _busy(a, max_workers=4, pools=pools)
+    a.tick()
+    assert p.launch.called is adds
+
+
 def test_a_launch_starts_the_cooldown_and_a_refusal_does_not(monkeypatch):
     machines = [Machine("p0", "gs-llm-qwen-flash-next-p0")]
     p = _provider("runpod", [1.89], machines)

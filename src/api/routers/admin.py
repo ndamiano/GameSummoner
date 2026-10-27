@@ -17,7 +17,7 @@ from config.settings_manager import settings_manager
 from db import events, games, jobs, workers
 from maestro import shares
 from maestro.codegen import build_chain
-from scaler.pools import pools
+from scaler.pools import policy, pools
 from scaler.runpod_client import RunPodClient
 
 logger = logging.getLogger("admin")
@@ -37,8 +37,10 @@ def _max_workers(settings: Dict[str, Any], queue: str, model: Optional[str]) -> 
     if not ((settings.get("runpod") or {}).get("enabled")
             or (settings.get("aws") or {}).get("enabled")):
         return 0
-    scaled = {(p.queue, p.model) for p in pools(settings)}
-    return int(settings["scaler"]["max_workers"]) if (queue, model) in scaled else 0
+    scaled = {(p.queue, p.model): p.name for p in pools(settings)}
+    if (queue, model) not in scaled:
+        return 0
+    return int(policy(settings["scaler"], scaled[(queue, model)])["max_workers"])
 
 
 def _stockouts(queue: str, model: Optional[str], now: float) -> Dict[str, Any]:

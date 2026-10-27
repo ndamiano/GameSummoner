@@ -342,8 +342,10 @@ under), `n_ctx` as `LLM_N_CTX` (at most 262144, Basalt's window), `slots` as `WO
 
 ### `scaler`
 
-Scaling policy, the same for every pool: `tick_seconds` (15), `stale_worker_seconds` (180),
-`max_workers` (3, a cap per pool), `min_jobs_per_pod` (6) and `cooldown_seconds` (300).
+Scaling policy: `tick_seconds` (15), `stale_worker_seconds` (180), `max_workers` (3, a cap per
+pool), `min_jobs_per_pod` (6) and `cooldown_seconds` (300). `pools` overrides `max_workers`,
+`min_jobs_per_pod` or `cooldown_seconds` for one pool by its name (`llm-<entry>`, `comfy`,
+`decide`), e.g. `"pools": {"decide": {"max_workers": 1, "min_jobs_per_pod": 1}}`.
 `docs/deploy.md` "Autoscaler" describes what each does.
 
 ### `aws`
