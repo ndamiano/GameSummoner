@@ -167,7 +167,7 @@ def _spawn_image(queue: str, leg: dict) -> subprocess.Popen:
 
 def _worker_env(queue: str) -> Path:
     from db import workers
-    worker_id = f"{socket.gethostname()}-{uuid.uuid4().hex[:6]}"
+    worker_id = f"{socket.gethostname()}-{uuid.uuid4().hex[:12]}"
     workers.worker_created(worker_id, None, queue, None, 0.0)
     settings = _settings()
     LOGS.mkdir(parents=True, exist_ok=True)
