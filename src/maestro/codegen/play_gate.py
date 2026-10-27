@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+from PIL import Image, ImageChops, ImageStat
 
 from llm_clients.connector import get_connector
 from llm_clients.message_builder import MessageBuilder
@@ -18,6 +21,10 @@ logger = logging.getLogger(__name__)
 MAX_TURNS = 10
 MAX_ROUNDS = 2
 SETTLE_MS = 1500
+SETTLE_FLOOR_MS = 200
+SETTLE_CAP_MS = 600
+SETTLE_POLL_MS = 100
+STILL = 1.0
 TAP_MS = 200
 IMAGE_WINDOW = 4
 STATE_FILE = "play_gate.json"
@@ -150,6 +157,22 @@ def _act(page, action: Tuple) -> None:
         logger.warning("play gate: could not press %s (%s)", what, e)
 
 
+def _thumb(png: bytes) -> Image.Image:
+    return Image.open(io.BytesIO(png)).convert("L").resize((160, 90))
+
+
+def _settle(page) -> None:
+    page.wait_for_timeout(SETTLE_FLOOR_MS)
+    prev, waited = _thumb(page.screenshot()), SETTLE_FLOOR_MS
+    while waited < SETTLE_CAP_MS:
+        page.wait_for_timeout(SETTLE_POLL_MS)
+        waited += SETTLE_POLL_MS
+        img = _thumb(page.screenshot())
+        if ImageStat.Stat(ImageChops.difference(img, prev)).mean[0] < STILL:
+            return
+        prev = img
+
+
 def _attach_errors(turns: List[Dict], errors: List[Dict], game_dir: Path) -> None:
     by_turn: Dict = {}
     for e in error_gate.dedup(errors):
@@ -210,7 +233,7 @@ def play(game_dir: Path, request: str) -> Optional[Dict]:
                 turns.append(turn)
                 current["turn"] = n
                 _act(page, _action_of(turn["action"]))
-                page.wait_for_timeout(SETTLE_MS)
+                _settle(page)
 
             browser.close()
     except Exception as e:

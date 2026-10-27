@@ -246,3 +246,33 @@ def test_max_rounds_stops(tmp_path, monkeypatch):
     started, kicked, _ = _run(tmp_path, monkeypatch, [report],
                               state={"rounds": play_gate.MAX_ROUNDS, "last_fact": None})
     assert not started and not kicked
+
+
+class _FramesPage:
+    def __init__(self, levels):
+        self.levels, self.waits = list(levels), []
+
+    def wait_for_timeout(self, ms):
+        self.waits.append(ms)
+
+    def screenshot(self):
+        import io
+        from PIL import Image
+        level = self.levels.pop(0) if len(self.levels) > 1 else self.levels[0]
+        buf = io.BytesIO()
+        Image.new("L", (320, 180), level).save(buf, "PNG")
+        return buf.getvalue()
+
+
+def test_settle_stops_at_the_first_still_frame_and_caps_a_frame_that_never_stops():
+    still = _FramesPage([40])
+    play_gate._settle(still)
+    assert sum(still.waits) == play_gate.SETTLE_FLOOR_MS + play_gate.SETTLE_POLL_MS
+
+    landing = _FramesPage([0, 60, 120, 120])
+    play_gate._settle(landing)
+    assert sum(landing.waits) == play_gate.SETTLE_FLOOR_MS + 3 * play_gate.SETTLE_POLL_MS
+
+    shimmer = _FramesPage([0, 50] * 20)
+    play_gate._settle(shimmer)
+    assert sum(shimmer.waits) == play_gate.SETTLE_CAP_MS
