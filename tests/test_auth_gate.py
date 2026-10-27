@@ -15,7 +15,6 @@ GATED_PATHS = [
     "/api/events",
     "/api/billing",
     "/api/admin",
-    "/api/admin/grades",
 ]
 
 

@@ -85,7 +85,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from api.routers import (admin, billing, demos, events, games, grades, shares, websocket,
+from api.routers import (admin, billing, demos, events, games, shares, websocket,
                          workqueue)
 from api.websocket.event_bus import event_bus
 from auth.deps import install_auth
@@ -118,7 +118,6 @@ app.include_router(demos.router, prefix="/api/demos", tags=["demos"])
 app.include_router(shares.router, prefix="/api/shares", tags=["shares"])
 app.include_router(billing.router, prefix="/api/billing", tags=["billing"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
-app.include_router(grades.router, prefix="/api/admin/grades", tags=["admin"])
 # Outside the /api user gate on purpose — workers auth with the shared workqueue token.
 app.include_router(workqueue.router, prefix="/worker", tags=["workqueue"])
 

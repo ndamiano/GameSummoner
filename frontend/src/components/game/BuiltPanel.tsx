@@ -1,8 +1,6 @@
 import React from 'react'
 import type { GameAsset, GameDetail } from '../../types'
 import { Button } from '../ui/Button'
-import { Link } from '../../router'
-import { useAuth } from '../../contexts/AuthContext'
 import { Meter } from '../ui/Meter'
 import { Sigil } from '../ui/Sigil'
 import { AssetGallery } from './AssetGallery'
@@ -78,7 +76,6 @@ export const BuiltPanel: React.FC<{
     sessionUrl, onPlay, onOpenTab, errorCount, onShowErrors,
 }) => {
     const cover = assets?.find(a => a.kind !== 'mesh' && a.status === 'ready') ?? null
-    const isAdmin = useAuth().user?.role === 'admin'
 
     return (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
@@ -94,12 +91,6 @@ export const BuiltPanel: React.FC<{
                             </button>
                         ) : <span />}
                         <div className="flex items-center gap-3">
-                            {isAdmin && (
-                                <Link to={`/grade/${runId}`}
-                                    className="text-xs text-slate hover:text-bone transition-colors">
-                                    Grade it
-                                </Link>
-                            )}
                             <button onClick={onOpenTab}
                                 className="text-xs text-slate hover:text-bone transition-colors">
                                 Open in its own tab ↗

@@ -203,40 +203,6 @@ export type WebSocketMessage = {
     [key: string]: any
 }
 
-// docs/game_rubric.md. A dimension's null score is `n/a` — not what this game is for — and is not
-// a zero; nothing here sums, the verdicts are separate holistic calls.
-export interface GradeClaim {
-    claim: string
-    verdict: 'delivered' | 'partial' | 'absent'
-    note: string
-}
-
-export interface Grade {
-    loads: boolean
-    takes_input: boolean
-    crashed: boolean
-    crash_note: string
-    first_impression: number | null
-    first_impression_note: string
-    show_someone: string
-    what_is_it: string
-    biggest_gap: string
-    dimensions: Record<string, { score: number | null; note: string }>
-    considered: number | null
-    considered_note: string
-    what_moved_it: string
-    claims: GradeClaim[]
-    unrequested: string
-    play_ended: string
-    play_minutes: number | null
-}
-
-export interface GradeTarget {
-    run_id: string
-    request: string
-    previous: number
-}
-
 export interface SharedGame {
     share_id: string
     title: string
