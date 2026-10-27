@@ -76,21 +76,22 @@ an RTX PRO 6000 at UD-Q4_K_XL; the 5090 runs a lower-bit quantization.
 ```
 <basalt>/bin/basalt serve \
   --config /var/lib/models/basalt/basalt-iq3s.json \
-  --alias <llm.model> \
+  --alias <llm.<entry>.model> \
   --host 127.0.0.1 --port 8090 \
   --vision dynamic \
   --fit-max-tokens
 ```
 
 The config holds the engine flags: the `.basalt` file, `spec` 7, int8 KV, `max-context` 262144,
-the expert cache sized to the free VRAM. Flags on the command line win over it. `--alias` must
-match `llm.model` in settings.json: every request names it. `--vision dynamic` borrows
+the expert cache sized to the free VRAM. Flags on the command line win over it.
+`scripts/local_gpu.py` passes the `local_gpu` entry's `model` as `--alias`, because every request
+names it, and appends the entry's `local_gpu.engine_args` to the line. `--vision dynamic` borrows
 expert-cache slots while it reads an image, so the worldgen refine stages can show the model its
 renders without a standing vision allocation. The window sits above `n_ctx` (131072), and
 `--fit-max-tokens` trims a request's `max_tokens` rather than refusing it, because Basalt counts a
 build's prompt about 1.5K tokens longer than the harness does and answers 400 to a request that
 overflows (measured 2026-10-15, `labs/basalt-6000`). Prod's llm box runs the same 262144 window
-and `fit-max-tokens` for the same reason. Thinking is `llm.reasoning` (below), sent as
+and `fit-max-tokens` for the same reason. Thinking is the entry's `reasoning` (below), sent as
 `reasoning_effort` on every call.
 
 ### LLM — llama.cpp
@@ -115,7 +116,7 @@ alone is a no-op: without it Qwen3.6 thinks in `content` and authoring turns tru
 cap before the tool call. `-fa on` plus q8_0 KV keeps the cache from spilling out of VRAM into host
 RAM.
 
-Set `-c` and `llm.n_ctx` to the same number — see the settings note below for why both directions
+Set `-c` and the entry's `n_ctx` to the same number — see the settings note below for why both directions
 hurt.
 
 ### Images — ComfyUI
@@ -155,31 +156,32 @@ this box has to add is a URL a pod can reach.
    it without sudo). `tailscale funnel status` prints the URL. It is a public HTTPS door to
    :8000 — the worker path is bearer-gated like prod, the landing page is not — so
    `sudo tailscale funnel off` when done.
-2. In settings.json: prod's `runpod` block (`queues`, templates, volumes; take it from the
-   droplet's settings.json) with `enabled: true` and `cp_url` = the funnel URL; `llm` =
-   what the pod serves — `model` `qwen3.8-flash-next-basalt`, `n_ctx` 131072, `slots` 1 —
-   because the pod serves under `model` and every request names it. `max_workers: 1` per queue
-   bounds spend. `workqueue.job_timeout_seconds` ≥ the longest single call you will queue (a
-   100K-token design at xhigh runs past the 1800 s default).
+2. In settings.json: prod's `runpod` account block (volumes, `queues.comfy`; take it from the
+   droplet's settings.json) with `enabled: true` and `cp_url` = the funnel URL;
+   `llm.qwen-flash-next` = prod's `self_hosted` entry (`model` `qwen3.8-flash-next-basalt`,
+   `n_ctx` 131072, `slots` 1, and `self_hosted.providers.runpod` copied from the droplet), because
+   the pod serves under `model` and every request names it. `scaler.max_workers: 1` bounds spend,
+   and it is a cap per pool. `workqueue.job_timeout_seconds` ≥ the longest single call you will
+   queue (a 100K-token design at xhigh runs past the 1800 s default).
 3. Stop `scripts/local_gpu.py auto` and any hand-started worker: a local worker claims the job
    before the pod boots.
-   Prod's autoscaler shares the RunPod account and reaps every `maestro-<queue>-*` pod that
-   never registered with PROD inside `boot_deadline_seconds` — a pod that registered here dies
-   at exactly five minutes. Set `runpod.pod_prefix` to something else (`gsdev`), and then prod
-   cannot see these pods and this scaler cannot see prod's.
+   Prod's autoscaler shares the RunPod account and reaps every `maestro-llm-<entry>-*` and
+   `maestro-comfy-*` pod that never registered with PROD inside `boot_deadline_seconds` — a pod
+   that registered here dies at exactly five minutes. Set `runpod.pod_prefix` to something else
+   (`gsdev`), and then prod cannot see these pods and this scaler cannot see prod's.
 4. Restart `run.py`; the log says `autoscaler started on runpod`. Then build exactly as usual —
    `python -m maestro.codegen.run "<ask>"`, or a pinned prompt through `run_build`. Scale-from-
    zero fires on the first pending job (the `min_jobs_per_pod` rule only gates a second pod).
-   Rent → claim is ~3 min on a warm image; a stock-out shows as `scale-up llm: ... refused`
+   Rent → claim is ~3 min on a warm image; a stock-out shows as `scale-up llm-<entry>: ... refused`
    every tick and the pending job dies at the reaper's 30 min unless something re-enqueues it.
 
 The pod's own view: `GET /pods/<id>` on the RunPod API (`scaler.runpod_client`) has its env,
 uptime and GPU utilisation, and the control-plane log shows its claims and heartbeats arriving
 from a RunPod address.
 
-The same from EC2: add the `aws` block (below) with `enabled: true`, keep the llm policy block
-in `runpod.queues` (it needs no `template_id` or cards when `runpod.enabled` is false), and the
-log says `autoscaler started on aws`. A box is ~3 min from launch to its first claim and ends
+The same from EC2: add the `aws` block (below) with `enabled: true`, add an `aws` block under
+`self_hosted.providers` of the llm entry, and the log says `autoscaler started on aws`. Policy is
+`scaler`'s, whatever the provider. A box is ~3 min from launch to its first claim and ends
 itself on idle; `pod_prefix` keeps this scaler and prod's apart in a shared account the same way.
 
 ---
@@ -198,12 +200,30 @@ restarted — Node caches the ESM config, and a stale one drops every custom cla
 
 ### `llm`
 
-`model`, `n_ctx`, `max_tokens`, `reasoning`, `slots`, `basalt_args`. There is no
-endpoint — inference rides the queue.
+A map of named entries. The key is the name a call asks for (`get_connector("qwen-flash-next")`,
+named inline at each call), at most 32 characters of `[a-z0-9.-]`. Every entry has `model` (the
+id sent in the request body), `n_ctx`, `max_tokens`, `reasoning` and `slots`, plus exactly one
+of these:
 
-`slots` is how many jobs one llm worker runs at once against its engine (`worker/agent.py
---slots`); an llm pod reads it at create. The scaler counts workers, not slots, so the llm
-queue's `min_jobs_per_pod` is per pod and scales with it: two slots, twice the backlog before a
+- `self_hosted`: `{engine_args, providers: {runpod: {...}, aws: {...}}}`. The scaler rents
+  machines for it. Each provider block is that provider's launch config plus `boot_seconds`,
+  `boot_deadline_seconds` and `idle_exit_seconds`. A missing block means that provider doesn't
+  serve it.
+- `api`: `{base_url, api_key?, effort?, usd_per_mtok: {input, cached_input, output}}`. The
+  control plane runs one API worker for it, and its jobs bill from tokens at these prices (zeros
+  for BYOK). `effort` maps a `reasoning` value to the name the provider takes; a value it does not
+  name is dropped.
+- `local_gpu`: `{engine_args?}`. `scripts/local_gpu.py` serves it on the card, one leg per entry.
+
+Settings load refuses a name outside that pattern, an entry missing `model` or `n_ctx` or not
+exactly one of the three, a provider other than `runpod` or `aws`, and an `api` entry missing
+`base_url` or any of the three prices. A call naming an entry the box's settings lack fails with
+`UnknownModel: no llm entry '…' in settings`. Every kind rides the queue, an `api` entry's
+through its API worker.
+
+`slots` is how many jobs one of an entry's llm workers runs at once against its engine
+(`worker/agent.py --slots`); an llm pod reads it at create. The scaler counts workers, not slots,
+so `scaler.min_jobs_per_pod` is per pod and scales with it: two slots, twice the backlog before a
 second card is rented. Prod's llm runs 1: Basalt reuses a slot only on an exact prefix match, an
 agent's next turn never matches one, so with `--parallel` above 1 it re-reads the whole
 conversation every turn. Builds sharing a card take turns on the one slot; conversation parking
@@ -216,10 +236,11 @@ of the oldest rounds until a third of the window holds the rest and, only if tha
 drops the oldest whole rounds; every compaction re-grounds the model on the code map and on which
 files it has already read unchanged (`CLAUDE.md`). Nothing else trims.
 
-`basalt_args` is appended to Basalt's launch line: by `scripts/local_gpu.py` for Flash-Next IQ3_S
-on the local 5090, and by the llm box entrypoint, as `BASALT_ARGS_EXTRA`, for Flash-Next
-UD-Q4_K_XL on an RTX PRO 6000 (`docs/deploy.md`). Prod and the local box run
-the same model at different quantizations on different cards; the build harness is the same.
+`engine_args` is appended to Basalt's launch line: `local_gpu.engine_args` by
+`scripts/local_gpu.py` for Flash-Next IQ3_S on the local 5090, and `self_hosted.engine_args` by the
+llm box entrypoint, as `BASALT_ARGS_EXTRA`, for Flash-Next UD-Q4_K_XL on an RTX PRO 6000
+(`docs/deploy.md`). Prod and the local box run the same model at different quantizations on
+different cards; the build harness is the same.
 
 Set it to the server's `-c`. The local router never reports its window, so both errors are yours to
 avoid, and only one of them announces itself:
@@ -295,11 +316,11 @@ aside.
 ### `runpod`
 
 The autoscaler (`src/scaler/` + `docs/deploy.md`): `enabled`, `api_key`, `network_volume_id`,
-`cp_url` (the pod-reachable control-plane URL), `tick_seconds`, `stale_worker_seconds`, and
-per-queue `queues.<name>` scaling blocks (template_id, network_volume_ids, gpu_type_ids,
-allowed_cuda_versions, max_workers, thresholds, cooldown, idle_exit_seconds,
-boot_deadline_seconds). The `queues` dict
-replaces the default wholesale — carry complete blocks. settings.json is the only place the block
+`cp_url` (the pod-reachable control-plane URL), `pod_prefix`, and `queues.<name>` launch blocks for
+the non-llm queues (comfy): template_id, network_volume_ids, gpu_type_ids, allowed_cuda_versions,
+plus `boot_seconds`, `idle_exit_seconds` and `boot_deadline_seconds`. An llm entry's RunPod launch
+block is its `self_hosted.providers.runpod`, with the same keys. The `queues` dict replaces the
+default wholesale — carry complete blocks. settings.json is the only place the block
 lives; `docs/deploy.md` describes what each knob does to a pod.
 
 `gpu_type_ids` is PRIORITY-ORDERED: the scaler asks for the head alone and widens to the whole list
@@ -310,14 +331,20 @@ stamped 5090, the bill entirely RTX PRO 4500).
 A pod's price is the provider's own (`workers.usd_per_hour`, written at create: RunPod's
 `costPerHr`, or the EC2 rung's spot or on-demand price),
 and it is what every job that pod runs debits (`docs/finance_information.md`); there is no rate
-table to keep. The admin fleet view shows it beside each queue's provider stock-outs
+table to keep. The admin fleet view shows it beside each pool's provider stock-outs
 (`pod_refusals`, see `docs/deploy.md` "Autoscaler"): the outage under way, the count over the last
 seven days, and the never-pruned requests-vs-stock-refusals ratio over 60 days and all time;
 nothing when zero.
 
-`llm.model` must be what the engine answers to: it reaches the pod as `LLM_MODEL`, and the
-autoscaled llm image serves under that alias. `llm.n_ctx` reaches it as `LLM_N_CTX` and must be at
-most 262144, Basalt's window.
+A `self_hosted` entry's `model` reaches its pods as `LLM_MODEL` (the alias the engine serves
+under), `n_ctx` as `LLM_N_CTX` (at most 262144, Basalt's window), `slots` as `WORKER_SLOTS`, and
+`self_hosted.engine_args` as `BASALT_ARGS_EXTRA`.
+
+### `scaler`
+
+Scaling policy, the same for every pool: `tick_seconds` (15), `stale_worker_seconds` (180),
+`max_workers` (3, a cap per pool), `min_jobs_per_pod` (6) and `cooldown_seconds` (300).
+`docs/deploy.md` "Autoscaler" describes what each does.
 
 ### `aws`
 
@@ -325,9 +352,11 @@ The scaler's second provider (`scaler.ec2_client`, `docs/deploy.md` "Autoscaler"
 `access_key`, `secret_key`, `security_group` and `instance_profile` (both `gs-gpu-worker`, by
 name, in the default VPC), and `queues.<name>` launch blocks: `instance_types`, `markets`
 (`spot`, `on-demand`), and `amis` by region. Only a region with an ami is priced, launched in
-or listed. Scaling policy is not here: a queue scales by its `runpod.queues` block whichever
-provider its machines come from. `workers.source` says which provider a row's machine is on, and
-an EC2 row's `pod_id` is `<region>/<instance id>`.
+or listed. llm launch blocks live under each `self_hosted` entry's `providers.aws`, and
+`queues.<name>` holds the non-llm ones, each with its own `boot_seconds`, `boot_deadline_seconds`
+and `idle_exit_seconds`. Policy is `scaler`'s. Regions are listed from every pool's amis.
+`workers.source` says which provider a row's machine is on, and an EC2 row's `pod_id` is
+`<region>/<instance id>`.
 
 ### `payments`
 

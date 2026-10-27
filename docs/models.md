@@ -40,7 +40,7 @@ box pulls the pack from the region's bucket onto instance store at boot; a RunPo
 from the llm volume (`aws/README.md` and `runpod/README.md` in gamesummoner-images).
 
 Requires: RTX PRO 6000 (96 GB, SM120), Workstation or Server Edition; the driver floor in
-`queues.llm.allowed_cuda_versions`.
+the llm entry's `self_hosted.providers.runpod.allowed_cuda_versions`.
 
 License terms that touch us: redistribution allowed with the notice intact. The model name must
 be shown on the UI only above 100M monthly active users or US$20M monthly revenue. A "Model as a

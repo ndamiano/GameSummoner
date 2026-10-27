@@ -22,8 +22,9 @@ control-plane config, and prod never dials out. Contract details: `docs/architec
 - `scripts/provision.sh` — one-time host setup.
 - `scripts/deploy.sh` — ship dev → prod.
 
-`settings.json` is dockerignored and rides a host bind mount, so `runpod.queues` (which env
-can't express) is editable without a rebuild — but the file must exist before the first `up`.
+`settings.json` is dockerignored and rides a host bind mount, so the `llm` entries and
+`runpod.queues` (which env can't express) are editable without a rebuild — but the file must exist
+before the first `up`.
 
 ## The data invariant (critical)
 
@@ -70,7 +71,7 @@ the app dir (default `/opt/maestro`):
 
 ```bash
 cp .env.example .env                  # then edit
-touch src/config/settings.json        # the compose bind-mount target; fill in runpod.queues
+touch src/config/settings.json        # the compose bind-mount target; fill in the llm entries and runpod.queues
 ```
 
 Then from the **dev box**:
@@ -196,8 +197,9 @@ python -m worker.agent ... --queue comfy --target http://localhost:8188   # Comf
 ```
 
 `--target` is the worker's own inference server and should stay bound to `127.0.0.1` — a reachable
-one is an unauthenticated GPU. `--worker-id` must name a row the scaler created for the pod: a
-worker row carries the pod's price, and a claim from an id nobody created is refused.
+one is an unauthenticated GPU. `--worker-id` must name a row its spawner created (the scaler for
+a pod, `local_gpu.py` for a leg, the control plane for an API worker): a worker row carries the
+pod's price and, on llm, the entry it serves, and a claim from an id nobody created is refused.
 
 A queue with no worker means every job on it times out.
 
@@ -212,37 +214,48 @@ every push, because RunPod caches images per host.
 
 With a provider enabled (`runpod.enabled` + `runpod.api_key`, `aws.enabled` + `aws.access_key`,
 or both) and the workqueue on, the control plane runs a scaling
-loop (`src/scaler/`): per tick it reaps dead pods and adds at most one pod per queue when the queue
-is backed up. Workers own scale-DOWN: `IDLE_EXIT_SECONDS` (delivered at pod create) is the
-worker's idle window — once every slot has been empty that long since its last job ended, the
+loop (`src/scaler/`): per tick it reaps dead pods and adds at most one pod per pool when the pool
+is backed up. A pool is a queue and the llm entry its machines serve: one per `self_hosted` entry,
+and one per non-llm queue in `runpod.queues` or `aws.queues`. Pods are named
+`<pod_prefix>-llm-<entry>-<hex8>` or `<pod_prefix>-comfy-<hex8>`, and a pod belongs to a pool by an
+exact match on its name without the hex. Workers own scale-DOWN: `IDLE_EXIT_SECONDS` (delivered
+at pod create) is the worker's idle window — once every slot has been empty that long since its last job ended, the
 worker deregisters and exits 0. The claim long-poll is capped server-side at 25 s, so the window
 is the worker's own clock across polls (until 2026-09-04 a single null claim was taken as the
 verdict, and every queue idled out at 25 s whatever the setting).
 
-Settings block (`settings.json` → `runpod`, the full key list in `docs/local_dev.md` "Settings"):
+Settings blocks (`settings.json` → `scaler`, `runpod` and each `self_hosted` llm entry, the full
+key list in `docs/local_dev.md` "Settings"):
 
 - `cp_url` — the control-plane URL pods dial back to; must be reachable from RunPod
   (`https://gamesummoner.com`, not localhost).
-- `tick_seconds` (15) — scaling-loop cadence. `stale_worker_seconds` (180) — a worker row silent
-  this long is dead.
+- `scaler.tick_seconds` (15) — scaling-loop cadence. `scaler.stale_worker_seconds` (180) — a
+  worker row silent this long is dead.
   A create RunPod refuses on every volume/card combination is recorded durably (`pod_refusals`,
-  one row per refused scale-up, kept 30 days) with the combos tried and the provider's text;
-- `queues.<name>` — per-queue policy: `template_id`, `gpu_type_ids` (a PRIORITY-ORDERED list: the
-  scaler creates with the first entry alone, and retries with the whole list only if RunPod refuses
+  one row per refused scale-up, kept 30 days, per pool by its `model` column, as are
+  `pod_request_days`) with the combos tried and the provider's text;
+- `scaler.max_workers` (3, a cap per pool), `scaler.cooldown_seconds` (300),
+  `scaler.min_jobs_per_pod` (6: jobs a new pod must be owed when it lands, or it is not worth its
+  boot) — policy, the same for every pool.
+- `runpod.queues.<name>` — a non-llm queue's launch config plus its host facts, and an llm
+  entry's `self_hosted.providers.runpod` takes the same keys: `template_id`, `gpu_type_ids` (a
+  PRIORITY-ORDERED list: the scaler creates with the first entry alone, and retries with the whole list only if RunPod refuses
   — asking for all of them at once gets whichever card RunPod prefers to hand out, and the cards are
   not substitutes), `network_volume_ids` (the queue's own volumes, one per datacenter its weights
   are copied to, tried in order; absent, the queue rides `runpod.network_volume_id`),
   `allowed_cuda_versions` (the host-driver floor the queue's engine needs),
-  `max_workers`, `cooldown_seconds`,
-  `boot_seconds` (what a boot costs this queue — a flat estimate, never measured),
-  `min_jobs_per_pod` (jobs a new pod must be owed when it lands, or it is not worth its boot),
+  `boot_seconds` (what a boot costs on this provider — a flat estimate, never measured),
   `idle_exit_seconds`
   (linger tuning: raise for chatty queues, 0 = never exit), `boot_deadline_seconds` (a pod this
-  old that no worker has registered from is reaped as wedged). The `queues` dict in `settings.json` replaces the
-  default wholesale — carry complete blocks.
+  old that no worker has registered from is reaped as wedged). These three are per provider: a
+  machine is held to its own provider's deadline, `IDLE_EXIT_SECONDS` is set once the rung picks
+  the provider, and the add-a-machine math uses the slower of the pool's providers'
+  `boot_seconds`. The `queues` dict in `settings.json` replaces the default wholesale — carry
+  complete blocks.
 - `aws` — the EC2 provider's own block (key list in `docs/local_dev.md`): credentials, the
-  security group and instance profile, and per queue the `instance_types`, `markets` and `amis`
-  by region. Policy stays in `runpod.queues`; a queue with a block in both is served by both.
+  security group and instance profile, and per queue (or llm entry, under
+  `self_hosted.providers.aws`) the `instance_types`, `markets` and `amis` by region. Policy is
+  `scaler`'s, and a pool with a block for both providers is served by both.
   The IAM user needs `ec2:RunInstances`, `CreateTags`, `TerminateInstances`,
   `CancelSpotInstanceRequests`, `DescribeInstances`, `DescribeSpotPriceHistory`,
   `DescribeInstanceTypeOfferings`, `DescribeSpotInstanceRequests`, `pricing:GetProducts`, and
@@ -276,7 +289,7 @@ Create-time `env` OVERRIDES the template's (verified 2026-09-04: every fleet pod
 `cp_url` in settings while the templates still named the retired funnel host). The template env
 is what a pod started by hand gets, so keep it current anyway.
 
-First full cycle to watch (comfy, `max_workers: 1`): enqueue a comfy job → pod appears in the RunPod
+First full cycle to watch (comfy, `scaler.max_workers: 1`): enqueue a comfy job → pod appears in the RunPod
 console with its worker row already `booting` → the worker registers under the worker id it was started with → job done → queue drains → worker exits + deregisters → pod
 disappears (self-terminate or reaper within `stale_worker_seconds`).
 

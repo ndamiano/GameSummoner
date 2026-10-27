@@ -35,6 +35,12 @@ Our queues are simple queries on the jobs table in our sql database.
 | `llm` | one build turn | any OpenAI-shaped server |
 | `comfy` | one image render, or image → 3D through TRELLIS.2 | ComfyUI |
 
+An llm job carries the name of the llm entry its call asked for (`jobs.model`), and each worker
+row records the entry it serves (`workers.model`, written by whoever spawned it). A claim takes
+the oldest pending job on the queue whose model is the worker's (`IS`, so comfy and decide
+match NULL). An `api` entry is served by an API worker the control plane runs. It calls the
+provider's OpenAI-compatible API and bills its jobs from tokens.
+
 ### Workers
 
 The workers are an autoscaled (managed by `src/scaler/autoscaler.py`) group of GPU machines rented
