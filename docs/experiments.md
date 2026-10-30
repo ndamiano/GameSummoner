@@ -2744,15 +2744,19 @@ with them 3/5.
 | Chain (arm B) | Turns/stage | Stage builds | Retries | Gates | Nick, blind |
 |---|---:|---:|---:|---|---|
 | A | 25 | 12 | 3 | play gate never clean | 4, "some sort of seemingly infinite thing happened" |
+| B | 25 | 2 | — | abandoned, layout off-screen | not graded |
 | C | 25 | 14 | 5 | clean | 8 |
 | D | 35 | 10 | 1 | clean | 6, "still pretty good" |
 | E | 35 | 9 | 0 | one 116-turn fix build, then clean | 7, "not far behind" |
 | one conversation | 200 | — | — | — | 2, "Missing graphics makes it unplayable" |
 
-Every working chain beat the one-conversation build. At 25 turns the final stage broke on 3 of 5
-tries. Arm A chains gated clean at 25 and 35 turns; they were served blind and are ungraded.
+One baseline run against five chains: the broken baseline was graded and broken chain B was not,
+and the chains alone span 4 to 8, so the baseline's spread is unknown. At 25 turns the final stage
+broke on 3 of 5 tries. Arm A chains gated clean at 25 and 35 turns; they were served blind and are
+ungraded.
 
-**Verdict.** Staged beats one conversation on this spec. Nick: "Let's swing big." Next: cut any
+**Verdict.** A staged chain can reach 8 on this spec; whether staged beats one conversation needs
+more than one baseline run. Nick: "Let's swing big." Next: cut any
 design, not one hand-cut spec (labs/stage-planner).
 
 **Details.** `labs/section-budget/README.md`.
@@ -2789,17 +2793,26 @@ keeping the best attempt. The plans read their design faithfully (53/54 to 80/80
 | bugs | 10 | 1 | 238 | 5 | 26 | 0/0 |
 | cat | 9 | 0 | 225 | 1 | 29 | 0/0 |
 
-Against fresh one-conversation builds of new designs: gta6 clearly staged (the control's play gate
-left W, Space and aim broken), penguin to the control on screenshots, carts to the control's gates,
-gears and blorp ties (gears' control finished at step 51: "a small design does not need staging").
+Against one-conversation builds of the same five fresh designs, Nick blind, 2026-10-30 (gates
+only, these had read as two losses for staged):
+
+| Design | Staged | One conversation | Nick |
+|---|---:|---:|---|
+| gears | 8 | 4 | staged "everything just kinda works"; control's drag never lands |
+| penguin | 7 | 2 | staged "probably the best rendition of this game I've seen"; control's camera spins |
+| blorp | 7 | 6 | both "cute", camera off in both |
+| carts | 5 | 5 | both cluttered and unexplained |
+| gta6 | 2 | 2 | both cameras unplayable |
+
+Staged 5.8 against 3.8, never behind. A camera spun by the mouse made three of the ten unplayable,
+staged or not.
 
 Bets on carts: back-loaded budgets (20,20,20,25,25,30,30,35,35) and repair first work, adaptive
 stage count and play-before-`done()` do not, and the winners did not stack. Back-loaded budgets on
 7 designs cut retries 8 → 2 at the same turns and minutes, gates a wash.
 
-**Verdict.** Nick: "we're moving to staged". The planner, back-loaded budgets, repair first and
-keep-best became the staged chain every later lab ran on. Nick's blind play of the pairs is not
-recorded.
+**Verdict.** Staged wins or ties every graded pair. Nick: "we're moving to staged". The planner,
+back-loaded budgets, repair first and keep-best became the staged chain every later lab ran on.
 
 **Details.** `labs/stage-planner/README.md`.
 
