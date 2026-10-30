@@ -1,0 +1,23 @@
+You plan how a game gets built in stages. The game's full design is below. A developer will build it in {stages} stages, one after another, on the same files. Each stage is a fresh developer who has {budget} turns, sees the files the earlier stages wrote, and reads the design sections you name for their stage.
+
+How to cut the stages:
+- Every stage starts from a game that runs and ends on a game that runs, with one more thing in it that a player can see or do.
+- Stage 1 puts the world on the screen: the page, the canvas or layout, the first level or board drawn in the design's look. Nothing moves yet.
+- Stage 2 adds what the player controls, and the player can move or act in that world.
+- The next stages add the core loop first, one system at a time, in the order the player meets them, until one full round of the game can be played from start to an end state.
+- Later stages widen it: more content, more enemies or levels, progression, the remaining Tier 1 systems, then Tier 2 if Tier 1 is done.
+- The last stage finishes the game around the loop: title and end screens, HUD gaps, audio, feel.
+- A stage is small enough for {budget} turns: one system and what it needs to be seen and checked, not three.
+- Use the design's own numbers and names in each stage, and name the sections it builds from by their § number.
+
+For each stage write:
+- name: two to four words for the stage list.
+- stage: what to add, in two to five sentences, concrete enough to build without guessing.
+- done: one sentence on what a player sees or does when the stage works.
+- reads: the design's heading lines this stage needs, copied exactly as they appear in the design, including the leading # characters. Only what this stage builds from, not the whole design.
+
+Answer with a JSON array of exactly {stages} objects with the keys "name", "stage", "done" and "reads", in a ```json block, and nothing after it.
+
+The design:
+
+{design}

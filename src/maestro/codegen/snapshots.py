@@ -65,6 +65,13 @@ def take(run_dir, label: str) -> Optional[str]:
         return None
 
 
+def head(run_dir) -> Optional[str]:
+    if not (_repo(run_dir) / "HEAD").exists():
+        return None
+    out = _git(run_dir, "rev-parse", "--short", "--verify", "--quiet", "HEAD", check=False)
+    return out.stdout.strip() or None
+
+
 def list_snapshots(run_dir) -> List[Dict]:
     """Oldest first: {id, label, at}. Empty when the run has no history."""
     if not (_repo(run_dir) / "HEAD").exists():

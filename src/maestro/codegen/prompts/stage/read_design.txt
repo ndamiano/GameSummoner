@@ -1,0 +1,4 @@
+design = open("design/design.md").read()
+for start, end in {ranges}:
+    print(design[start:end].rstrip())
+    print()

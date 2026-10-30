@@ -24,6 +24,7 @@ from maestro.codegen import (
     error_gate,
     play_gate,
     snapshots,
+    stages,
     turn_log,
 )
 from maestro.codegen.build_state import DEFAULT_MAX_STEPS, BuildCursor
@@ -84,7 +85,8 @@ def _run_lock(run_id: str, blocking: bool = True):
 
 def kickoff(run_id: str, *, kind: str = "build", note: str = "", fresh: bool = False,
             max_steps: int = DEFAULT_MAX_STEPS, after: Optional[str] = None,
-            designed: bool = False) -> Optional[str]:
+            designed: bool = False, stage: int = 0, attempt: int = 0,
+            request: str = "") -> Optional[str]:
     if after is not None:
         guard = dict(when_status=("running",), when_stage=("checking",), when_build=after)
     elif designed:
@@ -94,18 +96,21 @@ def kickoff(run_id: str, *, kind: str = "build", note: str = "", fresh: bool = F
     with _run_lock(run_id):
         if not games.move(run_id, "running", "building", **guard):
             return None
-        return _begin(run_id, kind=kind, note=note, fresh=fresh, max_steps=max_steps)
+        return _begin(run_id, kind=kind, note=note, fresh=fresh, max_steps=max_steps,
+                      stage=stage, attempt=attempt, request=request)
 
 
 def _begin(run_id: str, *, kind: str = "build", note: str = "", fresh: bool = False,
-           max_steps: int = DEFAULT_MAX_STEPS) -> str:
+           max_steps: int = DEFAULT_MAX_STEPS, stage: int = 0, attempt: int = 0,
+           request: str = "") -> str:
     replaced = games.current_build(run_id)
     if replaced is not None:
         jobs.abandon_build_jobs(replaced["id"], "replaced by a new build")
     build_id = games.create_build(run_id, kind=kind)
     games.finish_open_builds(run_id, "stopped", keep=build_id)
     games.build_started(build_id)
-    start_build(run_id, build_id, kind=kind, note=note, fresh=fresh, max_steps=max_steps)
+    start_build(run_id, build_id, kind=kind, note=note, fresh=fresh, max_steps=max_steps,
+                stage=stage, attempt=attempt, request=request)
     return build_id
 
 
@@ -170,16 +175,24 @@ def is_running(run_id: str) -> bool:
 
 
 def start_build(run_id: str, build_id: str, *, kind: str = "build", note: str = "",
-                fresh: bool = False, max_steps: int = DEFAULT_MAX_STEPS) -> None:
+                fresh: bool = False, max_steps: int = DEFAULT_MAX_STEPS, stage: int = 0,
+                attempt: int = 0, request: str = "") -> None:
     rs = RunState(run_id)
     if rs.read_spec() is None:
         raise ValueError(f"no prompt for run {run_id!r}")
+    plan = stages.load(rs.run_dir) if kind == "build" and not stage else None
+    if plan and (fresh or not _playable(rs.run_dir)):
+        stage, request = 1, stages.request(rs.read_spec()["ask"], plan, 1)
     if fresh:
         _clear_game(rs)
     _seed(rs)
 
     cursor = BuildCursor(build_id=build_id, kind=kind, max_steps=max_steps, t0=time.time())
-    if kind == "fix":
+    if stage:
+        stages.begin(rs.run_dir, stage, attempt)
+        cursor.stage, cursor.attempt, cursor.request = stage, attempt, request
+        cursor.max_steps = stages.load(rs.run_dir)["budgets"][stage - 1]
+    elif kind == "fix":
         snapshots.take(rs.run_dir, "before-fix")
         cursor.request = ("The game is already written and playable. A person played it and "
                           f"reported this:\n{note}\n\nRead the files and fix exactly that. Call "
@@ -330,7 +343,7 @@ def _finalize(run_id: str, rs: RunState, cursor: BuildCursor, ok: bool,
     games.build_finished(cursor.build_id, "succeeded" if ok else "failed", steps=cursor.step)
     logger.info("build %s finalized: ok=%s steps=%d", run_id, ok, cursor.step)
     status = (games.game(run_id) or {}).get("status")
-    if not ok:
+    if not ok and not (cursor.stage and error is None):
         if games.move(run_id, "failed", when_status=("running", "paused"),
                       when_stage=("building",), when_build=cursor.build_id):
             extra = {"error": error} if error else {}
@@ -358,8 +371,11 @@ def _settle(run_id: str, build_id: str) -> bool:
 
 def _post_finalize(run_id: str, build_id: str) -> None:
     from maestro.codegen import archive
+    cursor = build_state.load(run_id)
     try:
-        kicked = (error_gate.after_build(run_id, build_id)
+        kicked = ((cursor is not None and cursor.build_id == build_id and cursor.stage
+                   and stages.after_stage(run_id, cursor))
+                  or error_gate.after_build(run_id, build_id)
                   or (is_running(run_id) and play_gate.after_build(run_id, build_id)))
     except Exception:
         if not is_running(run_id):

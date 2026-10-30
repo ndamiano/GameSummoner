@@ -1,0 +1,5 @@
+for path, start, end in {pieces}:
+    if start == 0:
+        print("=" * 20, path)
+    print(open(path).read()[start:end], end="")
+    print()

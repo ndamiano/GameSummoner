@@ -1,0 +1,1 @@
+[The project as it stands: every file, what it imports, and each declaration with its line range. Read a file only to change it, and only the lines you need.]

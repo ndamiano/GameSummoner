@@ -125,6 +125,22 @@ def probe(game_dir: Path) -> List[Dict[str, str]]:
     return dedup(errors)
 
 
+def boot_check(game_dir: Path) -> Dict:
+    from playwright.sync_api import sync_playwright
+
+    errors: List[Dict[str, str]] = []
+    blocked: List[str] = []
+    boots = False
+    with _serve(game_dir) as base_url, sync_playwright() as pw:
+        browser = _browser(pw)
+        page = _open(browser, base_url, errors, blocked)
+        if page is not None:
+            boots = bool(page.evaluate("!!window.__game"))
+            page.close()
+        browser.close()
+    return {"boots": boots, "errors": [e["message"].splitlines()[0][:200] for e in dedup(errors)]}
+
+
 def _browser(pw):
     return pw.chromium.launch(
         proxy={"server": "http://127.0.0.1:9", "bypass": "127.0.0.1"},

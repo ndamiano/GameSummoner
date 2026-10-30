@@ -307,8 +307,8 @@ src/
                          the ask and the spec; it is absent while the design is pending. Web: the
                          decide job then the write job, tagged metadata.stage="design" and .step,
                          each completion enqueuing the next; the last writes `request`,
-                         emits `prompt_proposed` and KICKS OFF THE BUILD — no human reads the design
-                         first. A step that comes back empty is asked once more; one that fails, or
+                         emits `prompt_proposed` and enqueues the stage plan (`stages.py`), whose
+                         landing KICKS OFF THE BUILD — no human reads the design first. A step that comes back empty is asked once more; one that fails, or
                          comes back empty again (a decide job that fails, twice), writes `request = ask` and builds on that. A kickoff the budget refuses leaves the run designed and
                          idle, and the page's Build button retries it. CLI: the same chain,
                          synchronous, and the build is the CLI's own next call. The
@@ -319,6 +319,29 @@ src/
                          build that follows never charges again. Measured 2026-08-26
                          (`docs/experiments.md`): the model's design of a plain request built a
                          game "a million times better" than three stages of the request itself.
+      stages.py          STAGED BUILDS — one llm call (prompts/stage/plan.txt, a design step tagged
+                         .step="plan") cuts the design into 9 playable stages, kept as
+                         runs/<id>/design/stages.json: each a name, what to add, its done line, and
+                         the design headings it reads. Each stage is its own build on the same game
+                         folder (cursor.stage), with turn budgets 20,20,20,25,25,30,30,35,35. It
+                         opens fresh: build.txt with its whole-game opening swapped for the stage
+                         one, the stage request (frame.txt) listing every stage, then the build
+                         seeds plus seeded programs that print the stage's design sections, the
+                         shared ones (contracts, debug API, tests) and every file the game wrote
+                         itself (when they fit 100K chars), the code map after the last; a
+                         turns-left line follows every program. When a stage ends, its build goes
+                         to checking like any other, and `after_stage` loads the page once
+                         (`error_gate.boot_check`: did window.__game appear, what did it throw). A
+                         stage that does not boot or throws runs again from the snapshot before it,
+                         up to twice; then the best attempt (boots, then fewest errors, then the
+                         latest) is restored and the next stage starts from it, told to make the
+                         page load first when even the best one is broken. After the last stage
+                         the gates run as for any build. A plan the planner cannot give (asked
+                         twice) leaves the build unstaged. A build of a planned game starts at
+                         stage 1 when nothing is built yet or it is from scratch; fix and change
+                         builds, a rebuild over a built game and the CLI (which plans nothing)
+                         stay one conversation. Measured: `docs/experiments.md`,
+                         "a planner cuts any design into stages" (blind pairs 5.8 against 3.8).
       error_gate.py      the ERROR GATE — after a playable finalize, open the run dir's `game/`
                          (what was just staged) in a headless browser (playwright chromium, an ephemeral static server),
                          screenshot it, ask the model what the title screen offers

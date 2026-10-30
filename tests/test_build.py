@@ -107,6 +107,36 @@ def test_the_first_turn_sends_the_request_then_the_seeded_opening_run_for_real(t
     assert [t["function"]["name"] for t in out.schemas] == ["python"]
 
 
+def test_a_stage_build_opens_on_the_seeds_then_its_design_sections_and_the_game_with_its_map(
+        tmp_path, tools):
+    from maestro.codegen import stages
+    design = "# 2. CONTRACTS\nmain.js only\n# 4. GAMEPLAY SPEC\nhop over gaps\n# 7. UX\nbig buttons\n"
+    (tmp_path / "design.md").write_text(design)
+    (tmp_path / "game" / "design").mkdir()
+    (tmp_path / "game" / "design" / "design.md").write_text(design)
+    (tmp_path / "game" / "main.js").write_text("export function hop() { return 1; }\n")
+    stages._save(tmp_path, {"stages": [{"name": "hop", "stage": "add the hop", "done": "it hops",
+                                        "reads": ["# 4. GAMEPLAY SPEC"]}],
+                            "budgets": [20], "attempts": {}, "before": {}})
+    cursor = _cursor(stage=1, max_steps=20, request="stage one: add the hop")
+
+    out = build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, {})
+
+    assert out.messages[0]["content"].startswith("You are a game developer. You have been given a design")
+    sent = out.messages[1:]
+    assert [m["role"] for m in sent] == ["user"] + ["assistant", "tool"] * 4 + ["user"]
+    assert sent[0]["content"] == "stage one: add the hop"
+    assert "hop over gaps" in sent[6]["content"] and "main.js only" in sent[6]["content"]
+    assert "big buttons" not in sent[6]["content"]
+    assert "export function hop()" in sent[8]["content"] and "hop" in sent[8]["content"].split(
+        "[The project as it stands", 1)[1]
+    assert sent[-1]["content"] == "Good, continue, and please do not use the subprocess module."
+    assert all(build_steps.is_seed(m) for m in sent[1:])
+
+    build_steps.step("qwen-flash-next", {}, tmp_path, tools, cursor, _reply(code="print(1)"))
+    assert cursor.history[-1]["content"].endswith("[19 turns left in stage 1]")
+
+
 def test_fix_note_replaces_the_request(tmp_path, tools):
     cursor = _cursor(request="the player cannot move")
     out = build_steps.step("qwen-flash-next", {"request": "a card game"}, tmp_path, tools, cursor, {})

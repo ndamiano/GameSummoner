@@ -1,0 +1,1 @@
+The game in this folder already plays through stage {prev}. Look at what is there before you change it.

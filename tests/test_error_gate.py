@@ -336,3 +336,18 @@ def test_probe_falls_back_to_the_fixed_poke_when_the_model_cannot_be_asked(monke
             raise RuntimeError("no worker")
     monkeypatch.setattr(error_gate, "get_connector", lambda name: DeadConn())
     assert error_gate._targets(b"\x89PNG fake") is None
+
+
+@pytest.mark.parametrize("body,boots,errors", [
+    ("<script>window.__game = {};</script>", True, []),
+    ("<script>window.__game = {}; missing();</script>", True, ["missing is not defined"]),
+    ("<script>document.title = 'no api';</script>", False, []),
+])
+@pytest.mark.browser
+def test_the_stage_check_says_whether_the_game_booted_and_what_it_threw(tmp_path, fast_probe, body,
+                                                                         boots, errors):
+    pytest.importorskip("playwright.sync_api")
+    gdir = _game(tmp_path, f"<html><body>{body}</body></html>")
+    check = error_gate.boot_check(gdir)
+    assert check["boots"] is boots
+    assert [e.split(": ", 1)[-1] for e in check["errors"]] == errors

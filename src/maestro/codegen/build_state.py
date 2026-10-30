@@ -18,6 +18,8 @@ class BuildCursor:
     t0: float = 0.0
     ok: Optional[bool] = None
     request: str = ""                             # overrides the spec-rendered request (a gate fix or a change note)
+    stage: int = 0
+    attempt: int = 0
     started: bool = False
     turn: int = 0
     # what the SERVER reported for the last turn — an estimate of ours that drifts low would hit the

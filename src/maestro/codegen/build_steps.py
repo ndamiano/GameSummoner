@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Union
 
 from config import llm_models
 from llm_clients.message_builder import MessageBuilder
-from maestro.codegen import code_map, file_state, turn_log
+from maestro.codegen import code_map, file_state, stages, turn_log
 from maestro.codegen.build_state import BuildCursor
 from maestro.codegen.pyexec import runner
 from maestro.codegen.staging import game_dir
@@ -97,6 +97,9 @@ def step(model, spec, run_dir, tools, cursor, result, error: Optional[str] = Non
         cursor.system = (_PROMPTS / "build.txt").read_text(encoding="utf-8")
         cursor.history = [{"role": "user", "content": cursor.request or _request_from(spec)}]
         _seed(tools, cursor, run_dir)
+        if cursor.stage:
+            cursor.system = stages.system(cursor.system)
+            stages.preread(tools, cursor, run_dir)
         return _infer(run_dir, cursor, ctx)
 
     if error:
@@ -284,6 +287,8 @@ def _apply(tools, cursor, tc, run_dir) -> bool:
     outcome = runner.run(code, tools, game_dir(run_dir))
     cursor.actions.extend(_actions_of(outcome))
     content = _result_of(outcome) + (_repeat_note(cursor, code, outcome) or "")
+    if cursor.stage:
+        content += "\n\n" + stages.turns_left(cursor)
 
     finished = [t for name, t, ok in outcome.ledger if name == "done" and ok]
     cursor.history.append({"role": "tool", "tool_call_id": tc.get("id"), "content": content})

@@ -33,6 +33,10 @@ TIERED = "\n".join([f"Game prompt: {ASK}", "dimension: 2d", "camera: side-on", "
                     "palette: saturated: bright, strong colours", "screens: title, game over"])
 
 
+PLAN = json.dumps([{"name": f"Stage {i}", "stage": f"add thing {i}", "done": f"thing {i} shows",
+                    "reads": ["# 4. GAMEPLAY SPEC", "§3"]} for i in range(1, 10)])
+
+
 def _reply(content):
     return {"choices": [{"message": {"content": content}}]}
 
@@ -153,6 +157,11 @@ def test_the_decisions_are_banded_by_first_playable_and_written_into_one_spec(
     assert spec["ask"] == ASK and ASK in spec["request"] and "design/design.md" in spec["request"]
     assert staging.spec_path(RunState(run_id).run_dir).read_text() == SPEC
     assert [e[0] for e in events] == ["prompt_proposed"]
+    assert enqueued[-1][1] == "plan" and SPEC in enqueued[-1][2]
+    assert kicked == [] and finished == []
+
+    design.on_complete(run_id, "dbuild", _reply(f"```json\n{PLAN}\n```"), None, "plan")
+
     assert kicked == [(run_id, {"kind": "build", "designed": True})]
     assert finished == [("dbuild", "succeeded")]
 
@@ -171,7 +180,7 @@ def test_a_write_that_stops_early_is_asked_to_continue(tmp_runs, events, connect
     design.on_complete(run_id, "dbuild", _reply(REST), None, "write")
 
     assert staging.spec_path(RunState(run_id).run_dir).read_text() == HALF + REST
-    assert kicked == [(run_id, {"kind": "build", "designed": True})]
+    assert enqueued[-1][1] == "plan" and kicked == []
 
 
 @pytest.mark.parametrize("step, result, error", [
@@ -277,3 +286,41 @@ def test_the_cli_decides_and_writes_before_it_builds(tmp_runs, events, connector
     assert TIERED in connector.seen[0][-1]["content"]
     assert finished == [("dbuild", "succeeded")]
     assert "designing" in capsys.readouterr().out
+
+
+def test_the_plan_lands_as_stages_with_its_reads_on_the_design_headings(
+        tmp_runs, events, connector, enqueued, kicked, finished):
+    from maestro.codegen import stages
+    run_id = run_mod.create_run("u1")
+    _decided(run_id)
+    design.on_complete(run_id, "dbuild", _reply(SPEC), None, "write")
+
+    design.on_complete(run_id, "dbuild", _reply(f"Here it is.\n```json\n{PLAN}\n```"), None, "plan")
+
+    plan = stages.load(RunState(run_id).run_dir)
+    assert len(plan["stages"]) == 9 and plan["budgets"] == [20, 20, 20, 25, 25, 30, 30, 35, 35]
+    assert plan["stages"][0] == {"name": "stage 1", "stage": "add thing 1", "done": "thing 1 shows",
+                                 "reads": ["# 4. GAMEPLAY SPEC", "# 3. VISUAL SPEC"]}
+    request = stages.request(ASK, plan, 2)
+    assert "The stages: 1 stage 1 · 2 stage 2" in request and "This is stage 2." in request
+    assert "Stage 2: Add thing 2" in request and "You have 20 turns" in request
+    assert ASK in request and "already plays through stage 1" in request
+    assert kicked == [(run_id, {"kind": "build", "designed": True})]
+
+
+def test_a_reply_with_no_plan_is_asked_again_then_the_build_runs_unstaged(
+        tmp_runs, events, connector, enqueued, kicked, finished):
+    from maestro.codegen import stages
+    run_id = run_mod.create_run("u1")
+    _decided(run_id)
+    design.on_complete(run_id, "dbuild", _reply(SPEC), None, "write")
+
+    design.on_complete(run_id, "dbuild", _reply("I think nine stages."), None, "plan")
+
+    assert [e[1] for e in enqueued[-2:]] == ["plan", "plan"] and kicked == []
+
+    design.on_complete(run_id, "dbuild", None, "the worker died", "plan")
+
+    assert stages.load(RunState(run_id).run_dir) is None
+    assert kicked == [(run_id, {"kind": "build", "designed": True})]
+    assert finished == [("dbuild", "succeeded")]

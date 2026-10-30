@@ -1,0 +1,1 @@
+[{left} turns left in stage {n}. Make sure the game loads and this stage plays.]

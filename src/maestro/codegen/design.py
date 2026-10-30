@@ -134,8 +134,12 @@ def _enqueue_step(run_id: str, build_id: str, ask: str, step: str, spec_so_far: 
     if step == "decide":
         jobs.enqueue_job("decide", chain(ask), game_id=run_id, build_id=build_id, metadata=metadata)
         return
-    payload, model = get_connector("qwen-flash-next").build_llm_job(
-        _messages(ask, _state(run_id), spec_so_far), [], MAX_TOKENS)
+    if step == "plan":
+        from maestro.codegen import stages
+        messages = stages.plan_messages(spec_so_far)
+    else:
+        messages = _messages(ask, _state(run_id), spec_so_far)
+    payload, model = get_connector("qwen-flash-next").build_llm_job(messages, [], MAX_TOKENS)
     jobs.enqueue_job("llm", payload, game_id=run_id, build_id=build_id, model=model,
                      metadata=metadata)
 
@@ -175,6 +179,9 @@ def on_complete(run_id: str, build_id: Optional[str], result: Optional[Dict],
         return
     ask = (RunState(run_id).read_spec() or {}).get("ask", "")
     d = _design_dir(run_id)
+    if step == "plan":
+        _on_plan(run_id, build_id, result if error is None else None)
+        return
     if step == "decide":
         if error is None and result and result.get("state"):
             (d / DECISIONS).write_text(json.dumps(result, indent=1, ensure_ascii=False),
@@ -201,9 +208,23 @@ def on_complete(run_id: str, build_id: Optional[str], result: Optional[Dict],
         (d / ".rounds").write_text(str(rounds + 1))
         _next(run_id, build_id, ask, "write", spec_so_far=text)
         return
+    _land_spec(run_id, text, ask)
+    _next(run_id, build_id, ask, "plan", spec_so_far=text)
+
+
+def _on_plan(run_id: str, build_id: Optional[str], result: Optional[Dict]) -> None:
+    from maestro.codegen import stages
+    from maestro.codegen.staging import spec_path
+    from maestro.state import RunState
+    run_dir = RunState(run_id).run_dir
+    if not stages.land_plan(run_dir, _reply_text(result)):
+        if _retry(run_id, "plan"):
+            _next(run_id, build_id, "", "plan",
+                  spec_so_far=spec_path(run_dir).read_text(encoding="utf-8"))
+            return
+        logger.warning("design for %s: no stage plan — the build runs unstaged", run_id)
     if build_id:
         games.build_finished(build_id, "succeeded", steps=1)
-    _land_spec(run_id, text, ask)
     _start_build(run_id)
 
 
@@ -212,7 +233,10 @@ def _next(run_id: str, build_id: Optional[str], ask: str, step: str, spec_so_far
         _enqueue_step(run_id, build_id or "", ask, step, spec_so_far)
     except Exception:
         logger.exception("design for %s: %s could not be enqueued", run_id, step)
-        _fallback(run_id, build_id, ask, f"{step} refused")
+        if step == "plan":
+            _on_plan(run_id, build_id, None)
+        else:
+            _fallback(run_id, build_id, ask, f"{step} refused")
 
 
 def _decide(ask: str) -> Dict:
