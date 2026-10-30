@@ -2693,6 +2693,176 @@ evaluation only (unresolved data provenance). Decide stays JEV-27B-VL.
 
 **Details.** `labs/qev-decide/README.md`.
 
+## 2026-10-19 — Flash-Next building Opus's spec (local 5090, Flash-Next IQ3_S via Basalt)
+
+frontier-ceiling left two controls on the same ask: Opus spec + Opus build (d086d499669b, Nick 9,
+"kinda insanely good") and Flash-Next spec + Flash-Next build (524b1c3efa1c, "awful", tier 1 at
+~step 155). This arm swaps only the builder: Flash-Next builds Opus's spec verbatim.
+
+Build 8fc1191a0c54 capped at 200 steps in ~24 min with no tier completed and 5 compactions. Of 12
+failed edits, 10 targeted `old_text` that never existed in the file: code typed from memory,
+several right after a compaction. The play gate went clean after one fix round. A second 200 steps
+on the same files (5f5b08e81510) also capped, src 312 → 336 KB.
+
+Nick on build 1: "quite a bit better" than the Flash-Next control, "a far cry from opus", "clearly
+not finished", "needs more time to cook".
+
+**Verdict.** The spec carries part of the gap; one long conversation does not finish it. Led to
+labs/section-budget.
+
+**Details.** `labs/opus-design-flashnext-build/README.md`.
+
+## 2026-10-20 — two requests at once on Basalt (local 5090, Flash-Next IQ3_S via Basalt)
+
+Nick: "I'd rather we fix our slowness", tested before committing. Engine `batch` gave every slot
+the full 262K context and starved the expert cache (n=4 still reading a 59K prompt after 205 s), so
+the fair rerun used server `parallel`, two rounds each:
+
+| parallel | Expert cache | Aggregate tok/s | Per request tok/s |
+|---|---:|---:|---|
+| 1 | 19.4 GiB | 185 (mean) | 149–197 |
+| 2 | 19.1 GiB | 168 (mean) | 72–142 |
+
+A decode step holds at most 8 rows; two requests split them between their drafts, and their experts
+barely overlap, so each runs at about half speed and the total falls.
+
+**Verdict.** Idea failure. Basalt stays at one request at a time, `slots` unset.
+
+**Details.** `labs/basalt-batch/README.md`.
+
+## 2026-10-21 — the design built in stages, a fresh agent per stage (local 5090, Flash-Next IQ3_S via Basalt)
+
+The Opus wizard-cat spec (d086d499669b), cut into stages. Each stage is a fresh agent with a 25- or
+35-turn budget, a turns-left line, early `done()`, and a pre-read of the stage's sections, the
+spec's shared sections and the game's own files. Arm A cut by the spec's 11 BUILD ORDER steps, arm B
+by Nick's 9 playable stages. Control: the one-conversation 8fc1191a0c54 above.
+
+Stage 2 pre-read, 3 runs each: a code map gave 1 working game of 3, the files under an 89 KB cap
+3 of 3 (first write by turn 4–12). Without turns-left lines stage 1 never called `done()` (0/3);
+with them 3/5.
+
+| Chain (arm B) | Turns/stage | Stage builds | Retries | Gates | Nick, blind |
+|---|---:|---:|---:|---|---|
+| A | 25 | 12 | 3 | play gate never clean | 4, "some sort of seemingly infinite thing happened" |
+| C | 25 | 14 | 5 | clean | 8 |
+| D | 35 | 10 | 1 | clean | 6, "still pretty good" |
+| E | 35 | 9 | 0 | one 116-turn fix build, then clean | 7, "not far behind" |
+| one conversation | 200 | — | — | — | 2, "Missing graphics makes it unplayable" |
+
+Every working chain beat the one-conversation build. At 25 turns the final stage broke on 3 of 5
+tries. Arm A chains gated clean at 25 and 35 turns; they were served blind and are ungraded.
+
+**Verdict.** Staged beats one conversation on this spec. Nick: "Let's swing big." Next: cut any
+design, not one hand-cut spec (labs/stage-planner).
+
+**Details.** `labs/section-budget/README.md`.
+
+## 2026-10-22 — DeepSeek V4.1 Flash building Opus's spec, and writing its own audio (DeepSeek API)
+
+Same spec as above, builder DeepSeek V4.1 Flash. One conversation (57cbb0ef882d) capped at 200 in
+31 min, $0.35 off-peak ($1.62 with the Opus spec), gates 0/0, though the play gate never resolved a
+card. Staged (dsA25, 11 stages × 25 turns): stages 1–5 passed first try, but stage 4 dropped
+`requestAnimationFrame`, freezing the game, and the builder never saw it because its plays drive
+the debug API. Stages 6–11 burned both retries each, and the chain kept the last attempt, not the
+best. Prod gates ran 4 fix builds and handed off with 3 inputs broken. $0.94, $2.21 with the spec.
+
+A second arm took `lib/audio.js` and its rule out of `build.txt` (Nick: "the audio in our games are
+bad … Let the models do it themselves"). Build ee4f696fca48 wrote its own 236-line synth and step
+sequencer, gated clean after one fix round, $0.68 at peak.
+
+**Verdict.** Open: the blind play (:8941–8943) and the audio listen (:8944) are not recorded.
+Found: keep the best attempt, and a dead render loop is invisible to a builder playing through the
+debug API.
+
+**Details.** `labs/opus-design-deepseek-build/README.md`, `labs/model-owned-audio/README.md`.
+
+## 2026-10-23 — a planner cuts any design into stages (local 5090, Flash-Next IQ3_S via Basalt)
+
+One planner call (`prompts/plan.txt`) cuts a design into 9 playable stages, then chain C runs it,
+keeping the best attempt. The plans read their design faithfully (53/54 to 80/80 headings).
+
+| Game | Stage runs | Retries | Turns | `done()` | Min | Gates (error/play) |
+|---|---:|---:|---:|---:|---:|---|
+| Opus spec | 11 | 2 | 275 | 0 | 40 | 0/0 |
+| hiragana | 10 | 1 | 248 | 3 | 32 | 0/1 |
+| frog | 10 | 1 | 249 | 2 | 36 | 1/0 |
+| bugs | 10 | 1 | 238 | 5 | 26 | 0/0 |
+| cat | 9 | 0 | 225 | 1 | 29 | 0/0 |
+
+Against fresh one-conversation builds of new designs: gta6 clearly staged (the control's play gate
+left W, Space and aim broken), penguin to the control on screenshots, carts to the control's gates,
+gears and blorp ties (gears' control finished at step 51: "a small design does not need staging").
+
+Bets on carts: back-loaded budgets (20,20,20,25,25,30,30,35,35) and repair first work, adaptive
+stage count and play-before-`done()` do not, and the winners did not stack. Back-loaded budgets on
+7 designs cut retries 8 → 2 at the same turns and minutes, gates a wash.
+
+**Verdict.** Nick: "we're moving to staged". The planner, back-loaded budgets, repair first and
+keep-best became the staged chain every later lab ran on. Nick's blind play of the pairs is not
+recorded.
+
+**Details.** `labs/stage-planner/README.md`.
+
+## 2026-10-23 — a vision player, then a refine build from what it saw (local 5090, Flash-Next IQ3_S via Basalt)
+
+A vision player plays the gated game for 30 turns and reports; a director turns that into at most 3
+remedies (v2: goal, symptom and repro inputs, never a guessed cause); one 40-step build makes them
+and the prod gates run after. The loop keeps a round only when a judge says the player got further.
+
+The player's first note on penguin: "The penguin I am supposed to control was never visible on
+screen at any point". The gates had passed it. v2 fixed it (a stone mesh 2.69 m from the camera).
+Cat: the player reached the exit, and the complaints went one layer deeper. Penguin's climb resisted
+six rounds across three loop versions, partly the player's limit: it could not see quick actions or
+hold chords until the three-frame strip and `chord` arrived (08:25).
+
+**Verdict.** The player is the best detector we have; it finds what the gates cannot. As a fixer it
+is open. Refine rounds became pipeline-v2's last stage.
+
+**Details.** `labs/playtest-refine/README.md`.
+
+## 2026-10-24 — the builder sees its game (local 5090, Flash-Next IQ3_S via Basalt)
+
+Nick: "big swings with vision in the pipeline". On the staged chain:
+- **pictures:** a 640×360 frame after every `play()`;
+- **stage look:** a vision looker plays each stage and says shown, missing or unclear; a miss
+  retries with its report, and keep-best ranks boots, errors, then not-missing;
+- **relook:** an unclear look gets a second, longer look;
+- **trace** and **teleport:** state changes per input with the retry, and debug-API calls for the looker.
+
+Before 10-24 08:20 the looker could not see quick actions or hold keys, so its jump misses were
+false; 77 of 376 looks also ended early until 10-26.
+
+| Penguin (same plan, same budgets) | Stage runs | Retries | Min | Result |
+|---|---:|---:|---:|---|
+| control | 9 | 0 | 45 | Pip clipped by a low camera |
+| pictures | 9 | 0 | 40 | whole level framed, Pip in view |
+| look | 16 | 7 | 69 | |
+| pictures + look, fixed looker | 10 | 1 | 43 | looker climbed two levels and pulled a lever, a first |
+
+Across 3 more designs pictures + look lost 2 (carts, gta6) and tied cat. Relook costs 1.5–3× the
+chain time: it rescued skatemall (now winnable) and carts, not gta6 or cat. Trace fixed 1 of 3,
+and teleport had nothing to call. Blind grades, 1–10: relook 4.1 (n=8), relook + trace 3.3 (n=3),
+pictures + look 3.0 (n=3) and 6 on penguin.
+
+**Verdict.** Open. The look finds real misses: the same three classes over and over (input dropped
+before it is read, a goal with nothing that fires it, dead menu buttons). Retries alone rarely fix
+them. Led to labs/build-prompt-laws and labs/debug-api-state.
+
+**Details.** `labs/vision-build/README.md`.
+
+## 2026-10-24 — vision UX rounds after the build (local 5090, Flash-Next IQ3_S via Basalt)
+
+A vision tour, a review against the design's VISUAL SPEC and UX sections, a director, one 40-step
+change build, and a judge that keeps or drops the round. Unpaired judges could not tell fixes from
+noise: 0 of 6 rounds kept on cat. Paired (round 0's inputs replayed on each build, judge shown
+before and after) kept 3/3 on cat, then 2 rounds on 8 of 11 pipeline-v2 asks at 17–22 min of LLM
+per ask. Blind grades before → after: 4 same, 2 worse, 1 not comparable.
+
+**Verdict.** Nick: "overall better, but probably not worth keeping the LLM alive". Out of the
+pipeline (2026-10-27).
+
+**Details.** `labs/vision-ux/README.md`.
+
 ## 2026-10-25 — the play gate's fixed 1.5 s settle after every action
 
 Every play gate action waited a fixed 1.5 s before its screenshot, 15–30 s a gate run, with the
@@ -2715,3 +2885,62 @@ frame as mid-motion. A watched click went from ~2.0 s to 0.75 s.
 
 **Details.** `labs/vision-build/README.md`, "settle audit".
 
+## 2026-10-24 to 10-27 — pipeline-v2: design, staged chain with looks, gates, refine, on 11 asks (local 5090, Flash-Next IQ3_S via Basalt)
+
+Every arm above, end to end on fresh asks: the prod design; the planned staged chain (back-loaded
+budgets, repair first, a vision look per stage); the prod gates on a copy; three refine rounds;
+from catdefense on, two paired UX rounds. No control (Nick: none "until some format makes at least
+a really solid game"). 11 asks, 2026-10-24 to 10-27, ~2.5–4 h each.
+
+The looks kept finding misses that retries did not fix: farm3, catdefense3, turtlecity, timeloop,
+penguin3 and gta6b each ended a stage missing after three tries. Refine moved the player further on
+penguin3 (two levels cleared), dungeon, farm and gta6b (first working NPC dialogue), and kept
+nothing on turtlecity, timeloop and farm3. Rhythm's looks were false: a ~10 s turn cannot hit a
+±60 ms window; a scripted probe scored 9 and 10 Perfect.
+
+Nick's blind grades, 2026-10-27, 37 games from this and the vision labs (1–10):
+
+| Arm | n | Mean |
+|---|---:|---:|
+| pipeline-v2, gated | 3 | 6.7 |
+| pipeline-v2, polished (refine + UX) | 6 | 6.2 |
+| pipeline-v2, refined | 3 | 6.0 (one 1 left out: "doesn't seem meaningfully different") |
+| pipeline-v2, first three asks, final | 3 | 5.0 (catdefense 8, farm 6, skatemall 1) |
+| relook chain | 8 | 4.1 |
+| relook + trace | 3 | 3.3 |
+| pictures + look | 4 | 3.8 |
+| staged chain without looks | 2 | 4.0 |
+
+Notes: catdefense (8) "A tad more depth and this would be a solid game"; timeloop (7) "Probably the
+most interesting platformer we've gotten so far"; farm3 (7) "the graphics are insanely good, but I
+don't seem to have the ability to plant the seeds I found? … great bones, but it needs more depth";
+gta6b (4) "the most content I feel like I've seen in a game so far" but "Something about the model
+and making UX is.. not good"; penguin3 (3) "I beat it in I think 17 seconds".
+
+**Verdict.** Several 7s and an 8 from Flash-Next on its own designs; the open faults Nick names are
+depth and the three defect classes. Polished builds graded no higher than gated ones. UX left the pipeline; no ruling yet on what of the rest comes into
+`src/`.
+
+**Details.** `labs/pipeline-v2/README.md`, `labs/grade/`.
+
+## 2026-10-28 — three build-prompt laws against the recurring defects (local 5090, Flash-Next IQ3_S via Basalt)
+
+Three general laws at the top of `build.txt`'s Rules (an input is kept until handled; everything
+reachable has its trigger, tested by play(); every button works, tested by play()). One run on
+farm3's design, against farm3:
+
+| | farm3 | laws |
+|---|---:|---:|
+| Staged chain | 87 min | 83 min |
+| Stage attempts | 12 | 16 |
+| `done()` called | 1 | 9 |
+| Looks missing | 3 | 8 |
+
+The misses are the classes the laws name: pause dead, the hop never fires, pickup never reaches the
+satchel, planting and growth missing after three tries, gathering does nothing. The plans differ
+(each run re-plans), so the counts are not like for like. Refine round 1 got planting working,
+rounds 2–3 dropped.
+
+**Verdict.** Open, awaiting Nick's play. On the looks, the laws did not cut these defects.
+
+**Details.** `labs/build-prompt-laws/README.md`.
