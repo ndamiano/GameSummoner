@@ -403,6 +403,7 @@ def regenerate_asset(run_id: str, asset_id: str, note: str, mode: str = "full") 
 def _merge_prompt(original: str, note: str) -> str:
     """One small LLM call to fold a change note into the original prompt. Falls back to appending —
     a merge that fails must not cost the user their regenerate."""
+    from config import llm_models
     from llm_clients.connector import get_connector
     from llm_clients.message_builder import MessageBuilder
     system = ("You rewrite image prompts. Given the ORIGINAL prompt and a CHANGE the user asked "
@@ -410,7 +411,7 @@ def _merge_prompt(original: str, note: str) -> str:
               "does not touch.")
     user = f"ORIGINAL: {original}\n\nCHANGE: {note}"
     try:
-        reply = get_connector("qwen-flash-next").generate_with_tools(
+        reply = get_connector(llm_models.seat("assets")).generate_with_tools(
             MessageBuilder(system).add_user(user).build(), [], max_tokens=300)
         text = ((reply.get("choices") or [{}])[0].get("message", {}) or {}).get("content") or ""
         merged = text.strip().strip('"')

@@ -35,7 +35,8 @@ def wanted() -> dict:
     except OSError:
         d = {}
     swap = d.get("local", {}).get("llama_swap", {})
-    saved = {"llm": d.get("llm", {}).get("qwen-flash-next", {}).get("model"), "decide": swap.get("decide"),
+    build = (d.get("seats", {}).get("build") or [""])[0]
+    saved = {"llm": d.get("llm", {}).get(build, {}).get("model"), "decide": swap.get("decide"),
              "comfy": swap.get("comfy")}
     return {k: os.environ.get(f"GS_{k.upper()}_MODEL") or saved[k] or SUGGESTED[k] for k in SUGGESTED}
 

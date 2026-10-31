@@ -13,6 +13,7 @@ import time
 from contextlib import contextmanager
 from typing import Dict, Optional
 
+from config import llm_models
 from config.llm_models import UnknownModel
 from db import errors, games, jobs
 from llm_clients.connector import LLMConnector, get_connector
@@ -264,7 +265,7 @@ def _advance_locked(run_id: str, result: Optional[Dict], landed: Optional[Dict],
         return
     tools = build_tools(rs, cursor.build_id)
     try:
-        conn = get_connector("qwen-flash-next")
+        conn = get_connector(llm_models.seat("build"))
     except UnknownModel as e:
         _finalize(run_id, rs, cursor, ok=False, error=str(e))
         return

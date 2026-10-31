@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple
 
 from PIL import Image, ImageChops, ImageStat
 
+from config import llm_models
 from llm_clients.connector import get_connector
 from llm_clients.message_builder import MessageBuilder
 from maestro.codegen import error_gate
@@ -124,7 +125,7 @@ def _elided(history: List[Dict]) -> List[Dict]:
 
 
 def _ask(system: str, history: List[Dict], max_tokens: int) -> Optional[str]:
-    reply = get_connector("qwen-flash-next").generate_with_tools(
+    reply = get_connector(llm_models.seat("gate")).generate_with_tools(
         MessageBuilder(system).extend(_elided(history)).build(), [],
         max_tokens=max_tokens, reasoning="low")
     if reply.get("error"):

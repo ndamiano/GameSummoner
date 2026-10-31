@@ -70,12 +70,14 @@ def isolated_dbs(tmp_path, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def llm_entries(monkeypatch):
-    from config.settings_manager import settings_manager
+    from config.settings_manager import SEATS, settings_manager
 
     entries = {"qwen-flash-next": {"model": "qwen3.8-flash-next-basalt", "n_ctx": 32768,
                                    "max_tokens": 50000, "reasoning": "medium", "slots": 1,
                                    "local_gpu": {}}}
     monkeypatch.setitem(settings_manager._settings, "llm", entries)
+    monkeypatch.setitem(settings_manager._settings, "seats",
+                        {seat: ["qwen-flash-next"] for seat in SEATS})
     return entries
 
 

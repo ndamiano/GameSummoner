@@ -9,6 +9,7 @@ from typing import Any, Sequence
 
 from pydantic import BaseModel, ConfigDict
 
+from config import llm_models
 from llm_clients.connector import LLMConnector
 
 from . import WORLD_JOB_TIMEOUT
@@ -172,7 +173,7 @@ class LLMHarness:
         schema = [t.to_json_schema() for t in tool_list]
         msgs = self._build(prompt, system)
         rounds = max_rounds if max_rounds is not None else self.max_tool_rounds
-        connector = _get_connector("qwen-flash-next")
+        connector = _get_connector(llm_models.seat("worldgen"))
 
         def ask() -> Response:
             return _to_response(connector.generate_with_tools(

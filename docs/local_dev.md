@@ -200,10 +200,9 @@ restarted — Node caches the ESM config, and a stale one drops every custom cla
 
 ### `llm`
 
-A map of named entries. The key is the name a call asks for (`get_connector("qwen-flash-next")`,
-named inline at each call), at most 32 characters of `[a-z0-9.-]`. Every entry has `model` (the
-id sent in the request body), `n_ctx`, `max_tokens`, `reasoning` and `slots`, plus exactly one
-of these:
+A map of named entries. The key is the name a seat lists (see `seats`), at most 32 characters of
+`[a-z0-9.-]`. Every entry has `model` (the id sent in the request body), `n_ctx`, `max_tokens`,
+`reasoning` and `slots`, plus exactly one of these:
 
 - `self_hosted`: `{engine_args, providers: {runpod: {...}, aws: {...}}}`. The scaler rents
   machines for it. Each provider block is that provider's launch config plus `boot_seconds`,
@@ -257,6 +256,14 @@ avoid, and only one of them announces itself:
 rejected (`reasoning_effort_not_supported`). `none` DISABLES thinking, and a non-thinking build is
 the "something kinda close" arm of `docs/experiments.md` (2026-08-25), so a build server runs at
 `medium` or above. Each llm entry sets its own.
+
+### `seats`
+
+Which llm entries serve each part of the pipeline: `design` (the spec and the stage plan), `build`
+(the build chain), `gate` (the error and play gates, which read screenshots), `assets` (the image
+prompt merge on a regenerate) and `worldgen`. Each is a list of entry names, and the first one
+serves. Settings load refuses a seat that is missing, empty, names an entry `llm` lacks, or is not
+one of the five. Changing model is a settings edit and a `compose restart app`.
 
 ### The wire format is the worker's, not a setting
 

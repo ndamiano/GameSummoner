@@ -12,6 +12,23 @@
       }
     }
   },
+  "seats": {
+    "design": [
+      "qwen-flash-next"
+    ],
+    "build": [
+      "qwen-flash-next"
+    ],
+    "gate": [
+      "qwen-flash-next"
+    ],
+    "assets": [
+      "qwen-flash-next"
+    ],
+    "worldgen": [
+      "qwen-flash-next"
+    ]
+  },
   "scaler": {
     "tick_seconds": 15,
     "stale_worker_seconds": 180,

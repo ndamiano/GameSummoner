@@ -23,6 +23,7 @@ _ENTRY_NAME = re.compile(r"[a-z0-9.-]{1,32}")
 _KINDS = ("self_hosted", "api", "local_gpu")
 _PROVIDERS = {"runpod", "aws"}
 _PRICES = ("input", "cached_input", "output")
+SEATS = ("design", "build", "gate", "assets", "worldgen")
 
 
 def validate_llm(llm: Dict[str, Any]) -> None:
@@ -50,6 +51,19 @@ def validate_llm(llm: Dict[str, Any]) -> None:
                                  f"{{{', '.join(_PRICES)}}}")
 
 
+def validate_seats(seats: Dict[str, Any], llm: Dict[str, Any]) -> None:
+    for seat in SEATS:
+        names = seats.get(seat)
+        if not isinstance(names, list) or not names:
+            raise ValueError(f"settings seats.{seat}: a seat is a non-empty list of llm entries")
+        unknown = [n for n in names if n not in llm]
+        if unknown:
+            raise ValueError(f"settings seats.{seat}: no llm entry {unknown}")
+    extra = set(seats) - set(SEATS)
+    if extra:
+        raise ValueError(f"settings seats: unknown seats {sorted(extra)}")
+
+
 class SettingsManager:
 
     def __init__(self):
@@ -72,6 +86,7 @@ class SettingsManager:
             "working_directory": default_working_dir,
             "data_dir": default_data_dir,
             "llm": {},
+            "seats": {},
             "scaler": {
                 "tick_seconds": 15,
                 "stale_worker_seconds": 180,
@@ -120,6 +135,7 @@ class SettingsManager:
 
         self._settings = self._load_settings()
         validate_llm(self._settings["llm"])
+        validate_seats(self._settings["seats"], self._settings["llm"])
 
     def _load_settings(self) -> Dict[str, Any]:
         try:

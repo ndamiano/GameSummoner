@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from config import llm_models
 from db import games, jobs
 from llm_clients.connector import get_connector
 from llm_clients.message_builder import MessageBuilder
@@ -139,7 +140,8 @@ def _enqueue_step(run_id: str, build_id: str, ask: str, step: str, spec_so_far: 
         messages = stages.plan_messages(spec_so_far)
     else:
         messages = _messages(ask, _state(run_id), spec_so_far)
-    payload, model = get_connector("qwen-flash-next").build_llm_job(messages, [], MAX_TOKENS)
+    conn = get_connector(llm_models.seat("design"))
+    payload, model = conn.build_llm_job(messages, [], MAX_TOKENS)
     jobs.enqueue_job("llm", payload, game_id=run_id, build_id=build_id, model=model,
                      metadata=metadata)
 
@@ -250,7 +252,7 @@ def _decide(ask: str) -> Dict:
 
 def _write(ask: str, state: str, spec_so_far: str) -> str:
     for _ in range(RETRIES + 1):
-        text = _reply_text(get_connector("qwen-flash-next").generate_with_tools(
+        text = _reply_text(get_connector(llm_models.seat("design")).generate_with_tools(
             _messages(ask, state, spec_so_far), [], max_tokens=MAX_TOKENS))
         if text.strip():
             return text

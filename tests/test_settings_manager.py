@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from config.settings_manager import _merge, settings_manager, validate_llm
+from config.settings_manager import SEATS, _merge, settings_manager, validate_llm, validate_seats
 
 
 def test_merge_fills_keys_the_file_omits():
@@ -26,6 +26,7 @@ def test_example_settings_yield_every_key_callers_subscript():
     merged = _merge(settings_manager.defaults, example)
     assert merged["working_directory"]
     validate_llm(merged["llm"])
+    validate_seats(merged["seats"], merged["llm"])
     assert merged["llm"]["qwen-flash-next"]["n_ctx"]
     assert merged["scaler"]["max_workers"]
 
@@ -59,3 +60,25 @@ def test_an_llm_entry_is_checked_at_settings_load(name, entry, error):
     with pytest.raises(ValueError, match=error) as e:
         validate_llm({name: entry})
     assert f"llm.{name}" in str(e.value)
+
+
+EVERY_SEAT = {seat: ["qwen-flash-next"] for seat in SEATS}
+
+
+@pytest.mark.parametrize("seats,error", [
+    (EVERY_SEAT, None),
+    ({**EVERY_SEAT, "build": ["deepseek-4.1", "qwen-flash-next"]}, None),
+    ({k: v for k, v in EVERY_SEAT.items() if k != "gate"}, "seats.gate: a seat is"),
+    ({**EVERY_SEAT, "design": []}, "seats.design: a seat is"),
+    ({**EVERY_SEAT, "build": "qwen-flash-next"}, "seats.build: a seat is"),
+    ({**EVERY_SEAT, "assets": ["opus"]}, r"seats.assets: no llm entry \['opus'\]"),
+    ({**EVERY_SEAT, "audio": ["qwen-flash-next"]}, r"unknown seats \['audio'\]"),
+])
+def test_every_seat_names_llm_entries_settings_has(seats, error):
+    llm = {"qwen-flash-next": SELF_HOSTED,
+           "deepseek-4.1": {"model": "d", "n_ctx": 1, "api": {"base_url": "u", "usd_per_mtok": PRICES}}}
+    if error is None:
+        validate_seats(seats, llm)
+        return
+    with pytest.raises(ValueError, match=error):
+        validate_seats(seats, llm)
