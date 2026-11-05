@@ -35,7 +35,7 @@ class User:
     handle: str
     role: str = "user"
     email: str = ""
-    private: bool = True
+    private: bool = False
 
 
 def _hash_password(password: str, salt: Optional[bytes] = None) -> str:
@@ -98,9 +98,10 @@ def _insert_user(conn, handle: str, password: str, role: str, email: str) -> Use
     user = User(id=uuid.uuid4().hex[:12], handle=handle, role=role, email=email)
     try:
         conn.execute(
-            "INSERT INTO users (id, handle, email, password_hash, role, credits, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (user.id, user.handle, user.email, _hash_password(password), role, 0, time.time()),
+            "INSERT INTO users (id, handle, email, password_hash, role, credits, private, "
+            "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (user.id, user.handle, user.email, _hash_password(password), role, 0,
+             int(user.private), time.time()),
         )
     except sqlite3.IntegrityError as e:
         # Two unique constraints reach here; the caller answers them differently.

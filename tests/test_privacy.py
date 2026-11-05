@@ -32,12 +32,12 @@ def test_the_account_default_and_the_create_choice_decide_who_a_game_may_call(
                                json={"prompt": "a maze game", **choice}).json()["run_id"]
 
     made = [("default", new())]
-    assert app_client.get("/auth/me", headers=headers).json()["private"] is True
-    assert app_client.post("/auth/privacy", headers=headers,
-                           json={"private": False}).json() == {"ok": True, "private": False}
     assert app_client.get("/auth/me", headers=headers).json()["private"] is False
-    made += [("quality default", new()), ("private here", new(private=True)),
-             ("quality here", new(private=False))]
+    assert app_client.post("/auth/privacy", headers=headers,
+                           json={"private": True}).json() == {"ok": True, "private": True}
+    assert app_client.get("/auth/me", headers=headers).json()["private"] is True
+    made += [("private default", new()), ("quality here", new(private=False)),
+             ("private here", new(private=True))]
 
     asked = []
     monkeypatch.setattr(error_gate, "get_connector",
@@ -49,9 +49,9 @@ def test_the_account_default_and_the_create_choice_decide_who_a_game_may_call(
         error_gate._targets(b"png")
 
     assert [(label, games.private(rid)) for label, rid in made] == [
-        ("default", True), ("quality default", False), ("private here", True),
-        ("quality here", False)]
-    assert asked == ["qwen-flash-next", "deepseek-4.1", "qwen-flash-next", "deepseek-4.1",
+        ("default", False), ("private default", True), ("quality here", False),
+        ("private here", True)]
+    assert asked == ["deepseek-4.1", "qwen-flash-next", "deepseek-4.1", "qwen-flash-next",
                      "qwen-flash-next"]
     assert [llm_models.seat("build", p) for p in (True, False)] == ["qwen-flash-next",
                                                                      "deepseek-4.1"]

@@ -30,8 +30,9 @@ price is right, and they end up satisfied and feeling like they got their money'
 
 ### Privacy
 
-GameSummoner will not track users, will not sell user data, and will not use third party inference
-unless the user chooses it. The default never leaves our hardware.
+GameSummoner will not track users and will not sell user data. Third party inference makes better
+games, so it is the default, said plainly up front; a Private choice that never leaves our hardware
+is always one click away.
 
 ## Non-goals
 
