@@ -18,7 +18,7 @@ router = APIRouter()
 
 
 KINDS = frozenset({
-    "page_view", "create_opened", "build_started", "game_played", "change_sent",
+    "page_view", "create_opened", "build_started", "rebuild_started", "game_played", "change_sent",
     "credits_opened", "purchase_started",
 })
 ANON_USER = "anon"

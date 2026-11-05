@@ -96,6 +96,7 @@ def test_rollup_fills_fixed_columns_per_day_and_counts_users_and_purchases(app_c
     events.record_user_events("u1", [
         {"kind": "page_view", "payload": {}, "created_at": now},
         {"kind": "build_started", "payload": {}, "created_at": now},
+        {"kind": "rebuild_started", "payload": {}, "created_at": now},
         {"kind": "game_played", "payload": {}, "created_at": now - 86400},
     ])
     events.record_user_events("u2", [{"kind": "page_view", "payload": {}, "created_at": now}])

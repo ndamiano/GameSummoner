@@ -3,8 +3,11 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { CreateGame } from './CreateGame'
 import { AuthProvider } from '../../contexts/AuthContext'
 import { api, setAuthToken } from '../../api/client'
+import { track } from '../../api/track'
 
-afterEach(() => { cleanup(); vi.restoreAllMocks() })
+vi.mock('../../api/track', () => ({ track: vi.fn() }))
+
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.mocked(track).mockClear() })
 
 const create = (onCreated = () => {}, onCancel = () => {}) =>
     render(
@@ -42,6 +45,7 @@ describe('CreateGame', () => {
 
         await waitFor(() => expect(onCreated).toHaveBeenCalledWith('r9'))
         expect(call).toHaveBeenCalledWith('  a game about tides  ', true)
+        expect(track).toHaveBeenCalledWith('build_started', { run_id: 'r9' })
     })
 
     it('starts from the account default and sends the choice made here', async () => {
@@ -71,5 +75,6 @@ describe('CreateGame', () => {
         fireEvent.click(designButton())
 
         await waitFor(() => expect(screen.getByText(/no credits/i)).toBeTruthy())
+        expect(track).not.toHaveBeenCalledWith('build_started', expect.anything())
     })
 })

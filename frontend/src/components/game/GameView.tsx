@@ -132,7 +132,7 @@ export const GameView: React.FC<{ runId: string; onChanged: () => void; onBack: 
         setActing(true); setBuilding(true); setStatus('building'); closePlay()
         try {
             await (fresh ? api.regenerateGame : api.buildGame)(runId, promptText)
-            track('build_started', { run_id: runId, source: 'game', fresh })
+            track('rebuild_started', { run_id: runId, fresh })
             onChanged()
         }
         catch (e) {

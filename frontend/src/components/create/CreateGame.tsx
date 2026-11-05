@@ -37,6 +37,7 @@ export const CreateGame: React.FC<{ onCreated: (runId: string) => void; onCancel
         setBusy(true); setError(null); setBroke(false)
         try {
             const { run_id } = await api.createGame(text, isPrivate)
+            track('build_started', { run_id })
             clearDraft()
             onCreated(run_id)
         } catch (e) {
