@@ -1,0 +1,6 @@
+User-agent: *
+Disallow: /auth/
+Disallow: /play/
+Disallow: /handoff
+
+Sitemap: https://gamesummoner.com/sitemap.xml

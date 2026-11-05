@@ -260,6 +260,7 @@ if _runtime.is_dir():
     app.mount("/play", StaticFiles(directory=_runtime, html=True), name="play")
 
 _OG_META = re.compile(r'\s*<meta (?:property="og:(?:title|url|image)"|name="twitter:image")[^>]*>')
+_OG_TITLE_URL = re.compile(r'\s*<meta property="og:(?:title|url)"[^>]*>')
 
 
 def share_card(html: str, share_id: str, base: str) -> str:
@@ -267,11 +268,43 @@ def share_card(html: str, share_id: str, base: str) -> str:
     title = escape(share_store.meta(share_id).get("title") or "A GameSummoner game", quote=True)
     tags = [f'<meta property="og:title" content="{title} — made with GameSummoner" />',
             f'<meta property="og:url" content="{base}/g/{share_id}" />']
+    replaced = _OG_META
     if share_store.thumb(share_id):
         image = f"{base}/api/shares/{share_id}/thumb"
         tags += [f'<meta property="og:image" content="{image}" />',
                  f'<meta name="twitter:image" content="{image}" />']
-    return _OG_META.sub("", html).replace("</head>", "    " + "\n    ".join(tags) + "\n  </head>", 1)
+    else:
+        replaced = _OG_TITLE_URL
+    return replaced.sub("", html).replace("</head>", "    " + "\n    ".join(tags) + "\n  </head>", 1)
+
+
+def landing_page(html: str, listed: list[dict]) -> str:
+    cards = "".join(
+        '<article class="border border-edge rounded-md bg-panel px-4 py-3 flex flex-col gap-1.5">'
+        f'<h3 class="font-display text-lg">{escape(d["title"])}</h3>'
+        f'<p class="text-sm text-slate leading-relaxed">{escape(d["prompt"])}</p></article>'
+        for d in listed)
+    demos_html = ('<section class="flex flex-col gap-5">'
+                  '<h2 class="font-display text-2xl text-center">Games it made, and the words that summoned them</h2>'
+                  f'<div class="grid gap-6 md:grid-cols-2 items-start">{cards}</div></section>') if listed else ""
+    page = (
+        '<div id="prerender" class="min-h-screen bg-ink">'
+        '<header class="border-b border-edge bg-sunken px-6 py-3 flex items-center justify-between">'
+        '<span class="font-display text-lg tracking-wide">GameSummoner</span>'
+        '<a href="/login" class="text-sm text-slate">Sign in</a></header>'
+        '<main class="max-w-5xl mx-auto px-6 py-14 flex flex-col gap-14">'
+        '<section class="text-center flex flex-col items-center gap-4">'
+        '<div class="font-display text-4xl md:text-5xl leading-tight max-w-2xl">'
+        '<h1>Describe a game and GameSummoner summons it into reality.</h1></div>'
+        '<p class="text-slate max-w-xl leading-relaxed">The game you imagine — a sentence, a paragraph, '
+        "however you'd say it to a friend — becomes a real, playable browser game. Art and all.</p>"
+        f'</section>{demos_html}</main>'
+        '<footer class="border-t border-edge px-6 py-6"><div class="max-w-5xl mx-auto flex flex-wrap '
+        'items-center justify-center gap-x-5 gap-y-2 text-xs text-dim">'
+        '<a href="/about.html">About</a><a href="/terms.html">Terms</a>'
+        '<a href="/privacy.html">Privacy</a></div></footer></div>'
+        "<script>localStorage.getItem('maestro_token')&&document.getElementById('prerender').remove()</script>")
+    return html.replace('<div id="root"></div>', f'<div id="root">{page}</div>', 1)
 
 
 _frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
@@ -286,6 +319,11 @@ if _frontend_dist.is_dir():
         if not share_store.exists(share_id):
             return HTMLResponse(html, status_code=404)
         return HTMLResponse(share_card(html, share_id, _play_settings()[1] or str(request.base_url)))
+
+    @app.get("/", include_in_schema=False)
+    async def landing():
+        html = (_dist_root / "index.html").read_text(encoding="utf-8")
+        return HTMLResponse(landing_page(html, await demos.list_demos()))
 
     # The SPA routes by URL (/game/<id>, /settings, …), so a deep link or reload must get
     # index.html back, not a 404 — a plain StaticFiles mount only serves paths that exist on disk.

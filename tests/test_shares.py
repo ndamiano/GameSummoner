@@ -170,6 +170,19 @@ def test_a_shared_link_unfurls_as_that_game(client, cleanup, no_thumbs):
     assert 'og:description" content="Describe a game."' in card
 
 
+def test_a_shared_link_without_a_screenshot_unfurls_with_the_site_image(client, cleanup, no_thumbs):
+    owner, auth = _owner("hank")
+    run_id = _built_game(owner, cleanup)
+    sid = client.post(f"/api/games/{run_id}/share", headers=auth).json()["share_id"]
+    shell = ('<head>\n    <meta property="og:title" content="GameSummoner — describe a game, play it" />\n'
+             '    <meta property="og:image" content="https://gamesummoner.com/og.png" />\n  </head>')
+
+    card = api.app.share_card(shell, sid, "https://gamesummoner.com/")
+
+    assert "describe a game, play it" not in card
+    assert card.count('og:image" content="https://gamesummoner.com/og.png"') == 1
+
+
 def test_share_views_and_plays_rank_the_hot_list_with_their_referrers(client, cleanup, no_thumbs):
     owner, auth = _owner("carol")
     hot = _built_game(owner, cleanup)

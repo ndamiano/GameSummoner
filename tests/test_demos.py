@@ -232,3 +232,17 @@ def test_a_built_game_is_named_by_its_own_title_tag(client, staged_game, demo_li
         "<head><title>  Claws &amp; \n Cantrips  </title></head><body>x</body>", encoding="utf-8")
     demo_listed["showcase"].append({"id": run_id})
     assert client.get("/api/demos").json()[0]["title"] == "Claws & Cantrips"
+
+
+def test_the_landing_shell_carries_the_headline_and_listed_demos_without_javascript():
+    shell = '<body>\n    <div id="root"></div>\n    <script type="module" src="/x.js"></script>\n</body>'
+    listed = [{"title": "Reef <Rise>", "prompt": "a fish eating fish & growing"},
+              {"title": "Arena", "prompt": "units on a grid"}]
+
+    page = api.app.landing_page(shell, listed)
+
+    assert page.count("<h1>") == 1
+    assert "<h3 class=\"font-display text-lg\">Reef &lt;Rise&gt;</h3>" in page
+    assert "a fish eating fish &amp; growing" in page and "units on a grid" in page
+    assert page.index('id="prerender"') < page.index("</div>\n    <script type=\"module\"")
+    assert "Games it made" not in api.app.landing_page(shell, [])
