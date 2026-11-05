@@ -1,12 +1,4 @@
-"""The public demo surface — the landing page's playable games.
-
-Unauthenticated and read-only, limited to the run ids the OWNER listed in settings
-(`demo_games`): curation is a deploy-time decision, never a flag a build can set. The list is
-TIERED — `showcase` is what the machine can achieve (playtest notes, fix rounds), `oneshot`
-is what a single sentence gets, kept as it first came out — and the tier is the owner's claim,
-curated exactly like membership. Playing costs nothing meterable — the files are static and the
-grant is an in-memory entry — and the games run on the play origin, which holds no API and no
-credential (auth/playgrants.py)."""
+"""The public demo surface: the landing page's playable games, the run ids listed in `demo_games`."""
 
 from typing import Dict, List, Optional
 
@@ -21,52 +13,25 @@ from maestro import demos
 router = APIRouter()
 
 
-TIERS = ("showcase", "oneshot")
-
-
-def _demo_tiers() -> Dict[str, List[Dict]]:
-    """Each tier's entries: {"id": run_id, "thumb": path-inside-the-game or None}. The thumb is
-    curation like the listing itself — the owner names one of the game's own files."""
-    cfg = settings_manager.get_settings().get("demo_games") or {}
-    out: Dict[str, List[Dict]] = {}
-    for tier in TIERS:
-        out[tier] = [{"id": str(e["id"]), "thumb": e.get("thumb")}
-                     for e in (cfg.get(tier) or []) if isinstance(e, dict) and e.get("id")]
-    return out
-
-
-def _demo_ids() -> List[str]:
-    tiers = _demo_tiers()
-    return [e["id"] for tier in TIERS for e in tiers[tier]]
+def _demo_entries() -> List[Dict]:
+    """The listed entries: {"id": run_id, "thumb": a path inside the game or None}."""
+    return [{"id": str(e["id"]), "thumb": e.get("thumb")}
+            for e in settings_manager.get_settings().get("demo_games") or []
+            if isinstance(e, dict) and e.get("id")]
 
 
 def _thumb_of(run_id: str) -> Optional[str]:
-    for tier in TIERS:
-        for e in _demo_tiers()[tier]:
-            if e["id"] == run_id:
-                return e.get("thumb")
-    return None
+    return next((e["thumb"] for e in _demo_entries() if e["id"] == run_id), None)
 
 
 @router.get("", response_model=List[Dict])
 async def list_demos():
-    """Each demo with the prompt that made it and the tier it was listed under — the product
-    story is the pairing, not the game alone. A listed id with no snapshot is skipped, not an
-    error: the list lives in settings and the snapshots on disk, and a redeploy may see one
-    before the other."""
-    out = []
-    tiers = _demo_tiers()
-    for tier in TIERS:
-        for entry in tiers[tier]:
-            run_id = entry["id"]
-            if not demos.exists(run_id):
-                continue
-            out.append({"run_id": run_id,
-                        "title": demos.title(run_id) or run_id,
-                        "prompt": demos.meta(run_id).get("prompt", ""),
-                        "tier": tier,
-                        "thumb_url": f"/api/demos/{run_id}/thumb" if entry.get("thumb") else None})
-    return out
+    """Each listed demo that has a snapshot, with the prompt that made it."""
+    return [{"run_id": e["id"],
+             "title": demos.title(e["id"]) or e["id"],
+             "prompt": demos.meta(e["id"]).get("prompt", ""),
+             "thumb_url": f"/api/demos/{e['id']}/thumb" if e["thumb"] else None}
+            for e in _demo_entries() if demos.exists(e["id"])]
 
 
 @router.get("/{run_id}/thumb")
@@ -89,7 +54,7 @@ async def demo_thumb(run_id: str):
 async def demo_play_session(run_id: str):
     """A play session anyone may mint, for listed games only. The grant opens this one
     snapshot's static files and nothing else."""
-    if run_id not in _demo_ids() or not demos.exists(run_id):
+    if run_id not in {e["id"] for e in _demo_entries()} or not demos.exists(run_id):
         raise HTTPException(status_code=404, detail="not a demo")
     token = playgrants.issue_handoff(playgrants.target("demos", run_id))
     if token is None:

@@ -72,8 +72,7 @@ const DemoCard: React.FC<{ demo: Demo }> = ({ demo }) => {
     )
 }
 
-// The demo grid: showcase then one-shot tiers. Shared by the signed-out landing page and the
-// signed-in /demos page.
+// Shared by the signed-out landing page and the signed-in /demos page.
 const DemoGallery: React.FC = () => {
     const [demos, setDemos] = useState<Demo[]>([])
 
@@ -81,36 +80,15 @@ const DemoGallery: React.FC = () => {
 
     return (
         <div className="flex flex-col gap-14">
-            {demos.some(d => d.tier === 'showcase') && (
-                <section className="flex flex-col gap-5">
-                    <h2 className="font-display text-2xl text-center">Iterated</h2>
-                    <p className="text-sm text-slate text-center max-w-xl mx-auto">
-                        Immediately playable, incrementally improved.
-                    </p>
-                    <div className="grid gap-6 md:grid-cols-2">
-                        {demos.filter(d => d.tier === 'showcase')
-                            .map(d => <DemoCard key={d.run_id} demo={d} />)}
-                    </div>
-                </section>
-            )}
-
-            {demos.some(d => d.tier === 'oneshot') && (
-                <section className="flex flex-col gap-5">
-                    <h2 className="font-display text-2xl text-center">One-shotted</h2>
-                    <p className="text-sm text-slate text-center max-w-xl mx-auto">
-                        No improvements made — didn't need any. You might still want some.
-                    </p>
-                    <div className="grid gap-6 md:grid-cols-2">
-                        {demos.filter(d => d.tier === 'oneshot')
-                            .map(d => <DemoCard key={d.run_id} demo={d} />)}
-                    </div>
-                </section>
-            )}
-
             {demos.length > 0 && (
-                <p className="text-xs text-dim text-center">
-                    Every one of these was made by the machine from the words shown under it.
-                </p>
+                <>
+                    <div className="grid gap-6 md:grid-cols-2">
+                        {demos.map(d => <DemoCard key={d.run_id} demo={d} />)}
+                    </div>
+                    <p className="text-xs text-dim text-center">
+                        Every one of these was made by the machine from the words shown under it.
+                    </p>
+                </>
             )}
         </div>
     )

@@ -213,6 +213,5 @@ export interface Demo {
     run_id: string
     title: string
     prompt: string
-    tier: 'showcase' | 'oneshot'
     thumb_url: string | null
 }

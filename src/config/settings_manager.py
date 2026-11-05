@@ -110,12 +110,7 @@ class SettingsManager:
                 "origin": "",
                 "app_origin": "",
             },
-            # Games playable by ANYONE from the landing page — the owner's curation, not a flag
-            # any build can set. Two tiers: "showcase" is what the machine can achieve, "oneshot"
-            # is a single prompt's first result kept untouched. Entries are
-            # {"id": run_id, "thumb": "assets/….webp"} — thumb optional, a file of the game's own,
-            # the card's face. Both tiers empty ⇒ no demo surface.
-            "demo_games": {"showcase": [], "oneshot": []},
+            "demo_games": [],
             # EXCEPT "queues", which it replaces wholesale: the file must carry complete queue blocks.
             "runpod": {
                 "enabled": False,

@@ -57,20 +57,19 @@ def clean_runtime():
 
 @pytest.fixture
 def demo_listed(monkeypatch):
-    """Put run ids on the demo list without touching the settings file. Append to a tier's list
-    to list a game under it."""
+    """Put run ids on the demo list without touching the settings file. Append to list a game."""
     from config.settings_manager import settings_manager
 
-    tiers = {"showcase": [], "oneshot": []}
+    listed = []
     real = settings_manager.get_settings
 
     def patched():
         s = real()
-        s["demo_games"] = {k: list(v) for k, v in tiers.items()}
+        s["demo_games"] = list(listed)
         return s
 
     monkeypatch.setattr(settings_manager, "get_settings", patched)
-    return tiers
+    return listed
 
 
 def _game(staged=None):
@@ -84,9 +83,9 @@ def _game(staged=None):
 
 def test_demo_list_is_public_and_carries_the_prompt(client, staged_game, demo_listed):
     run_id = _game(staged_game)
-    demo_listed["showcase"].append({"id": run_id})
+    demo_listed.append({"id": run_id})
     unstaged = _game()
-    demo_listed["showcase"].append({"id": unstaged})  # listed but not built — skipped, not an error
+    demo_listed.append({"id": unstaged})
 
     r = client.get("/api/demos")  # no Authorization header
     assert r.status_code == 200
@@ -105,7 +104,7 @@ def test_a_demo_shows_the_persons_words_not_the_design(client, clean_runtime, de
     stage_for_play(RunState(run_id).run_dir, run_id)
     clean_runtime.append(api.app._runtime / "games" / run_id)
     clean_runtime.append(demos.snapshot(run_id))
-    demo_listed["oneshot"].append({"id": run_id})
+    demo_listed.append({"id": run_id})
 
     assert client.get("/api/demos").json()[0]["prompt"] == "make me a fox game"
 
@@ -121,7 +120,7 @@ def test_a_snapshot_is_a_copy_no_later_build_moves(client, clean_runtime, demo_l
     stage_for_play(run_dir, run_id)
     clean_runtime.append(api.app._runtime / "games" / run_id)
     clean_runtime.append(demos.snapshot(run_id))
-    demo_listed["oneshot"].append({"id": run_id})
+    demo_listed.append({"id": run_id})
 
     (gd / "index.html").write_text("<head><title>Second</title></head><body>v2</body>", encoding="utf-8")
     stage_for_play(run_dir, run_id)
@@ -143,14 +142,13 @@ def test_a_snapshot_needs_a_staged_game(client):
         demos.snapshot(_game())
 
 
-def test_each_demo_carries_its_tier_showcase_first(client, staged_game, demo_listed):
-    one = _game(staged_game)
-    show = _game(staged_game)
-    demo_listed["oneshot"].append({"id": one})
-    demo_listed["showcase"].append({"id": show})
+def test_demos_come_back_in_the_listed_order(client, staged_game, demo_listed):
+    first = _game(staged_game)
+    second = _game(staged_game)
+    demo_listed.extend([{"id": second}, {"id": first}])
 
     rows = client.get("/api/demos").json()
-    assert [(x["run_id"], x["tier"]) for x in rows] == [(show, "showcase"), (one, "oneshot")]
+    assert [x["run_id"] for x in rows] == [second, first]
 
 
 def test_a_thumb_is_served_for_listed_games_and_stays_inside_the_game(client, staged_game, demo_listed):
@@ -158,9 +156,9 @@ def test_a_thumb_is_served_for_listed_games_and_stays_inside_the_game(client, st
     gd = demos.demo_dir(run_id)
     (gd / "assets").mkdir()
     (gd / "assets" / "fox.webp").write_bytes(b"not-really-webp")
-    demo_listed["oneshot"].append({"id": run_id, "thumb": "assets/fox.webp"})
+    demo_listed.append({"id": run_id, "thumb": "assets/fox.webp"})
     bare = _game(staged_game)
-    demo_listed["oneshot"].append({"id": bare})
+    demo_listed.append({"id": bare})
 
     rows = client.get("/api/demos").json()
     assert [x["thumb_url"] for x in rows] == [f"/api/demos/{run_id}/thumb", None]
@@ -173,14 +171,14 @@ def test_a_thumb_is_served_for_listed_games_and_stays_inside_the_game(client, st
 
 def test_a_thumb_path_cannot_escape_the_game_folder(client, staged_game, demo_listed):
     run_id = _game(staged_game)
-    demo_listed["oneshot"].append({"id": run_id, "thumb": "../../../../etc/passwd"})
+    demo_listed.append({"id": run_id, "thumb": "../../../../etc/passwd"})
     assert client.get(f"/api/demos/{run_id}/thumb").status_code == 404
 
 
 def test_demo_play_session_works_without_auth_for_listed_games_only(client, staged_game, demo_listed):
     run_id = _game(staged_game)
     other = _game(staged_game)  # staged but NOT listed
-    demo_listed["oneshot"].append({"id": run_id})
+    demo_listed.append({"id": run_id})
 
     assert client.post(f"/api/demos/{other}/play-session").status_code == 404
     r = client.post(f"/api/demos/{run_id}/play-session")
@@ -204,7 +202,7 @@ def test_demo_surface_grants_nothing_else(client, staged_game, demo_listed):
     """The public prefix must not open the rest of /api, and a demo grant opens one game only."""
     run_id = _game(staged_game)
     other = _game(staged_game)
-    demo_listed["showcase"].extend([{"id": run_id}, {"id": other}])
+    demo_listed.extend([{"id": run_id}, {"id": other}])
 
     assert client.get("/api/games").status_code == 401
     r = client.post(f"/api/demos/{run_id}/play-session")
@@ -230,7 +228,7 @@ def test_a_built_game_is_named_by_its_own_title_tag(client, staged_game, demo_li
     gd = demos.demo_dir(run_id)
     (gd / "index.html").write_text(
         "<head><title>  Claws &amp; \n Cantrips  </title></head><body>x</body>", encoding="utf-8")
-    demo_listed["showcase"].append({"id": run_id})
+    demo_listed.append({"id": run_id})
     assert client.get("/api/demos").json()[0]["title"] == "Claws & Cantrips"
 
 
