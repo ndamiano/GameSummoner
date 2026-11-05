@@ -2957,3 +2957,25 @@ rounds 2–3 dropped.
 **Verdict.** Open, awaiting Nick's play. On the looks, the laws did not cut these defects.
 
 **Details.** `labs/build-prompt-laws/README.md`.
+
+## 2026-10-30 — Opus 5.5, DeepSeek V4.1 Flash and Flash-Next on the mainline staged chain (Opus and DeepSeek via their APIs; Flash-Next IQ3_S via Basalt, local 5090)
+
+One fresh ask, "a game where you're a tiny ghost haunting a bakery at night, scaring customers to
+steal pastries before sunrise", through the shipped staged chain (65c05fc). Every llm call (design
+write, plan, stages, gates) went to the arm's model; JEV made the design decisions for all three.
+
+| | Flash-Next | DeepSeek V4.1 Flash | Opus 5.5 |
+|---|---|---|---|
+| Game | e30b96b10489 | 6382ea1e857f | 4d1aa7d6046c |
+| Design | 12,855 words | 13,448 words | 10,136 words |
+| Stages | 9, every one booted clean first try | 9, the same | 9, the same |
+| Gate fix rounds | 2 (Start did not leave the title) | 0 | 0 |
+| Wall time | ~63 min | ~42 min | ~90 min |
+| Cost | local (Basalt on the lab's reduced RAM settings, 145 tok/s) | $0.37, off-peak | $20.14, 205 calls |
+| Nick, blind | 4, "I can like move around, and I can get a single cookie, but do nothing with it." | 7 ("probably closer to a 6.6"), "Not too bad, the sound from the jump scare is *awful* though!" | 8, "a really solid baseline for a fun game. It's not super intuitive so a small tutorial would be awesome." |
+
+Nick on the Opus game: "the claude one was obvious lol. Still the best one we've gotten."
+
+**Verdict.** With the harness held fixed, the model is the gap: Opus 8, DeepSeek 6.6–7, Flash-Next
+4, whose core loop does not close. DeepSeek gets most of the way to Opus at under 2% of its cost:
+$0.37 off-peak ($0.74 at peak) against $0.71–1.15 for a recent prod Flash-Next game. One ask, one game per model.
