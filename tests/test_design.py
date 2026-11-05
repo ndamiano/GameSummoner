@@ -176,6 +176,12 @@ def test_a_write_that_stops_early_is_asked_to_continue(tmp_runs, events, connect
     assert enqueued[-1][1] == "write" and HALF in enqueued[-1][2] and TIERED in enqueued[-1][2]
     assert "Continue it from that point" in enqueued[-1][2]
     assert kicked == []
+    continuation = enqueued[-1][2]
+
+    design.on_complete(run_id, "dbuild", None, "api unreachable: ConnectionError: reset", "write")
+
+    assert enqueued[-1][1] == "write" and enqueued[-1][2] == continuation
+    assert kicked == []
 
     design.on_complete(run_id, "dbuild", _reply(REST), None, "write")
 
@@ -187,6 +193,7 @@ def test_a_write_that_stops_early_is_asked_to_continue(tmp_runs, events, connect
     ("decide", None, "decide image returned 502"),
     ("decide", {}, None),
     ("write", _reply(""), None),
+    ("write", None, "api unreachable: ChunkedEncodingError: Response ended prematurely"),
 ])
 def test_a_failed_step_is_asked_for_again_before_the_ask_is_the_prompt(
         tmp_runs, events, connector, enqueued, kicked, finished, step, result, error):
@@ -206,17 +213,6 @@ def test_a_failed_step_is_asked_for_again_before_the_ask_is_the_prompt(
     assert RunState(run_id).read_spec()["request"] == ASK
     assert [e[0] for e in events] == ["prompt_proposed"]
     assert [r for r, _ in kicked] == [run_id]
-    assert finished == [("dbuild", "failed")]
-
-
-def test_a_write_the_worker_failed_leaves_the_ask_as_the_prompt(tmp_runs, events, connector,
-                                                                enqueued, kicked, finished):
-    run_id = run_mod.create_run("u1")
-    _decided(run_id)
-
-    design.on_complete(run_id, "dbuild", None, "the worker died", "write")
-
-    assert RunState(run_id).read_spec()["request"] == ASK
     assert finished == [("dbuild", "failed")]
 
 

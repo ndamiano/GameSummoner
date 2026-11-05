@@ -4,6 +4,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
+import requests
 
 from api.routers import workqueue as wq
 from db import jobs
@@ -95,3 +96,48 @@ def test_an_api_worker_serves_only_its_entry_with_its_model_effort_and_key(
 ])
 def test_cache_hits_are_read_from_either_providers_field(usage, cached):
     assert api_worker.with_cached_tokens({"usage": usage})["usage"]["cached_tokens"] == cached
+
+
+class _Reply:
+    def __init__(self, status, body):
+        self.status_code, self.body, self.text = status, body, json.dumps(body)
+
+    def json(self):
+        return self.body
+
+
+DROP = requests.exceptions.ChunkedEncodingError("Response ended prematurely")
+
+
+@pytest.mark.parametrize("answers,outcome,sleeps", [
+    ([DROP, requests.ConnectTimeout("connect timed out"), _Reply(200, REPLY)],
+     ("hi", None), [2.0, 5.0]),
+    ([requests.ReadTimeout("read timed out")],
+     (None, "api unreachable: ReadTimeout: read timed out"), []),
+    ([_Reply(503, {"error": "busy"}), _Reply(200, REPLY)], ("hi", None), [2.0]),
+    ([_Reply(402, {"error": "no balance"})], (None, 'Status 402: {"error": "no balance"}'), []),
+    ([requests.exceptions.InvalidURL("bad url")],
+     (None, "api unreachable: InvalidURL: bad url"), []),
+    ([DROP, DROP, DROP],
+     (None, "api unreachable: ChunkedEncodingError: Response ended prematurely"), [2.0, 5.0]),
+    ([requests.ConnectionError("refused"), DROP, _Reply(502, {"error": "gateway"})],
+     (None, 'Status 502: {"error": "gateway"}'), [2.0, 5.0]),
+])
+def test_a_transport_drop_or_5xx_is_retried_twice_and_a_client_error_or_read_timeout_fails_at_once(
+        monkeypatch, answers, outcome, sleeps):
+    pending, slept = list(answers), []
+
+    def post(*_, **__):
+        answer = pending.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(api_worker.requests, "post", post)
+    monkeypatch.setattr(api_worker.time, "sleep", slept.append)
+
+    result, error = api_worker.call({"base_url": "http://x/v1"}, {"messages": []}, timeout=5)
+
+    content = result["choices"][0]["message"]["content"] if result else None
+    assert (content, error) == outcome
+    assert slept == sleeps and pending == []

@@ -197,7 +197,7 @@ def on_complete(run_id: str, build_id: Optional[str], result: Optional[Dict],
     text = _reply_text(result) if error is None else ""
     spec = d / "spec.md"
     if not text.strip():
-        if error is None and _retry(run_id, step):
+        if _retry(run_id, step):
             _next(run_id, build_id, ask, step,
                   spec_so_far=spec.read_text(encoding="utf-8") if spec.is_file() else "")
             return

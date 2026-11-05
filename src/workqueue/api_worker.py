@@ -21,6 +21,8 @@ CLAIM_WAIT_SECONDS = 2.0
 HEARTBEAT_SECONDS = 45.0
 RESTART_SECONDS = 10.0
 STOP_GRACE_SECONDS = 30.0
+RETRY_BACKOFF_SECONDS = (2.0, 5.0)
+TRANSIENT = (requests.ConnectionError, requests.exceptions.ChunkedEncodingError)
 
 
 def engine_body(body: dict, api: dict) -> dict:
@@ -44,11 +46,22 @@ def with_cached_tokens(result: dict) -> dict:
 
 def call(api: dict, body: dict, timeout: float) -> tuple[Optional[dict], Optional[str]]:
     headers = {"Authorization": f"Bearer {api['api_key']}"} if api.get("api_key") else {}
-    try:
-        r = requests.post(f"{api['base_url'].rstrip('/')}/chat/completions", timeout=timeout,
-                          json=engine_body(body, api), headers=headers)
-    except requests.RequestException as e:
-        return None, f"api unreachable: {e.__class__.__name__}: {e}"
+    for backoff in (*RETRY_BACKOFF_SECONDS, None):
+        try:
+            r = requests.post(f"{api['base_url'].rstrip('/')}/chat/completions", timeout=timeout,
+                              json=engine_body(body, api), headers=headers)
+        except requests.RequestException as e:
+            error = f"api unreachable: {e.__class__.__name__}: {e}"
+            if backoff is None or not isinstance(e, TRANSIENT):
+                return None, error
+        else:
+            if r.status_code < 500:
+                break
+            error = f"Status {r.status_code}: {r.text[:2000]}"
+            if backoff is None:
+                return None, error
+        logger.warning("%s, retrying in %.0fs", error, backoff)
+        time.sleep(backoff)
     if not 200 <= r.status_code < 300:
         return None, f"Status {r.status_code}: {r.text[:2000]}"
     try:
