@@ -43,6 +43,7 @@ router = APIRouter()
 
 class NewGameBody(BaseModel):
     prompt: str
+    private: Optional[bool] = None
 
 
 class BuildBody(BaseModel):
@@ -155,7 +156,8 @@ async def create_game(body: NewGameBody, user: User = Depends(get_current_user))
         raise HTTPException(status_code=402, detail={
             "reason": "insufficient_credits", "balance": ledger.balance(user.id), "cost": price})
 
-    run_id = await asyncio.to_thread(create_run, user.id)
+    private = user.private if body.private is None else body.private
+    run_id = await asyncio.to_thread(create_run, user.id, private)
     if not ledger.deduct(user.id, price, "build", run_id):
         raise HTTPException(status_code=402, detail={
             "reason": "insufficient_credits", "balance": ledger.balance(user.id), "cost": price})

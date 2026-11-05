@@ -73,6 +73,7 @@ EVERY_SEAT = {seat: ["qwen-flash-next"] for seat in SEATS}
     ({**EVERY_SEAT, "build": "qwen-flash-next"}, "seats.build: a seat is"),
     ({**EVERY_SEAT, "assets": ["opus"]}, r"seats.assets: no llm entry \['opus'\]"),
     ({**EVERY_SEAT, "audio": ["qwen-flash-next"]}, r"unknown seats \['audio'\]"),
+    ({**EVERY_SEAT, "build": ["deepseek-4.1"]}, "seats.build: a private game needs"),
 ])
 def test_every_seat_names_llm_entries_settings_has(seats, error):
     llm = {"qwen-flash-next": SELF_HOSTED,

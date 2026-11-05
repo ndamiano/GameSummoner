@@ -11,8 +11,14 @@ def entries() -> Dict[str, Dict]:
     return settings_manager.get_settings()["llm"]
 
 
-def seat(name: str) -> str:
-    return settings_manager.get_settings()["seats"][name][0]
+def ours(entry: Dict) -> bool:
+    return "api" not in entry
+
+
+def seat(name: str, private: bool) -> str:
+    """The first entry the seat lists that a game of this privacy may call."""
+    return next(n for n in settings_manager.get_settings()["seats"][name]
+                if not private or ours(entries()[n]))
 
 
 def entry(name: str) -> Dict:

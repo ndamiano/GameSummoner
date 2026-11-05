@@ -7,6 +7,7 @@ interface AuthUser {
     role: string
     // Only /auth/me carries it; the login and signup answers do not.
     email?: string
+    private?: boolean
 }
 
 interface AuthContextValue {
@@ -49,7 +50,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!getAuthToken()) return
         try {
             const me = await api.me()
-            setUser({ id: me.id, handle: me.handle, role: me.role, email: me.email })
+            setUser({ id: me.id, handle: me.handle, role: me.role, email: me.email, private: me.private })
             setBalance(me.balance)
         } catch {
             // A 401 is handled centrally (clears the token); nothing else to do here.

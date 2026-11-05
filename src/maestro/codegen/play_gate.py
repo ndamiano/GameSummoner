@@ -12,10 +12,12 @@ from typing import Dict, List, Optional, Tuple
 from PIL import Image, ImageChops, ImageStat
 
 from config import llm_models
+from db import games
 from llm_clients.connector import get_connector
 from llm_clients.message_builder import MessageBuilder
 from maestro.codegen import error_gate
 from maestro.codegen.error_gate import VIEWPORT, _FENCE, _KEY_NAMES, _serve
+from tools.execution_context import get_run_id
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +127,7 @@ def _elided(history: List[Dict]) -> List[Dict]:
 
 
 def _ask(system: str, history: List[Dict], max_tokens: int) -> Optional[str]:
-    reply = get_connector(llm_models.seat("gate")).generate_with_tools(
+    reply = get_connector(llm_models.seat("gate", games.private(get_run_id()))).generate_with_tools(
         MessageBuilder(system).extend(_elided(history)).build(), [],
         max_tokens=max_tokens, reasoning="low")
     if reply.get("error"):

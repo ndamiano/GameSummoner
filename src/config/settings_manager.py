@@ -59,6 +59,8 @@ def validate_seats(seats: Dict[str, Any], llm: Dict[str, Any]) -> None:
         unknown = [n for n in names if n not in llm]
         if unknown:
             raise ValueError(f"settings seats.{seat}: no llm entry {unknown}")
+        if all("api" in llm[n] for n in names):
+            raise ValueError(f"settings seats.{seat}: a private game needs an entry that is not api")
     extra = set(seats) - set(SEATS)
     if extra:
         raise ValueError(f"settings seats: unknown seats {sorted(extra)}")

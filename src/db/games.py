@@ -9,14 +9,23 @@ from db.connection import platform_db, row_dict
 from tools.version import maestro_rev
 
 
-def create_game(game_id: str, user_id: str) -> None:
+def create_game(game_id: str, user_id: str, private: bool = True) -> None:
     now = time.time()
     with platform_db() as conn:
         conn.execute(
-            "INSERT INTO games (id, user_id, stage, status, created_at, updated_at) "
-            "VALUES (?, ?, 'designing', 'running', ?, ?)",
-            (game_id, user_id, now, now),
+            "INSERT INTO games (id, user_id, stage, status, private, created_at, updated_at) "
+            "VALUES (?, ?, 'designing', 'running', ?, ?, ?)",
+            (game_id, user_id, int(private), now, now),
         )
+
+
+def private(game_id: Optional[str]) -> bool:
+    """Whether the game's llm calls stay on our own hardware; anything not a game's stays too."""
+    if game_id is None:
+        return True
+    with platform_db() as conn:
+        row = conn.execute("SELECT private FROM games WHERE id = ?", (game_id,)).fetchone()
+    return row is None or bool(row["private"])
 
 
 def game(game_id: str) -> Optional[Dict]:

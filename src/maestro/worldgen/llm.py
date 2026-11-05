@@ -10,7 +10,9 @@ from typing import Any, Sequence
 from pydantic import BaseModel, ConfigDict
 
 from config import llm_models
+from db import games
 from llm_clients.connector import LLMConnector
+from tools.execution_context import get_run_id
 
 from . import WORLD_JOB_TIMEOUT
 from .llm_tools import Tool, as_tool, tool
@@ -173,7 +175,7 @@ class LLMHarness:
         schema = [t.to_json_schema() for t in tool_list]
         msgs = self._build(prompt, system)
         rounds = max_rounds if max_rounds is not None else self.max_tool_rounds
-        connector = _get_connector(llm_models.seat("worldgen"))
+        connector = _get_connector(llm_models.seat("worldgen", games.private(get_run_id())))
 
         def ask() -> Response:
             return _to_response(connector.generate_with_tools(

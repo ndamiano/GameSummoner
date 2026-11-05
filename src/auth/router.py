@@ -222,5 +222,17 @@ async def me(user: User = Depends(get_current_user)):
         "handle": user.handle,
         "role": user.role,
         "email": user.email,
+        "private": user.private,
         "balance": ledger.balance(user.id),
     }
+
+
+class PrivacyRequest(BaseModel):
+    private: bool
+
+
+@router.post("/privacy")
+async def change_privacy(body: PrivacyRequest, user: User = Depends(get_current_user)):
+    """The default a new game starts with; each game keeps the choice it was created with."""
+    store.set_private(user.id, body.private)
+    return {"ok": True, "private": body.private}

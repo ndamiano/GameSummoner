@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS games (
     credits_spent   INTEGER NOT NULL DEFAULT 0,
     granted_micros  INTEGER NOT NULL DEFAULT 0,
     spent_micros    INTEGER NOT NULL DEFAULT 0,
+    private         INTEGER NOT NULL DEFAULT 1,
     created_at      REAL NOT NULL,
     updated_at      REAL NOT NULL
 );
@@ -125,6 +126,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     role          TEXT NOT NULL DEFAULT 'user',
     credits       INTEGER NOT NULL DEFAULT 0,
+    private       INTEGER NOT NULL DEFAULT 1,
     created_at    REAL NOT NULL
 );
 -- Case-insensitive: nobody remembers which case they signed up with, and two accounts

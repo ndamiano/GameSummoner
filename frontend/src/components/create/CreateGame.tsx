@@ -6,6 +6,7 @@ import { track } from '../../api/track'
 import { useAuth } from '../../contexts/AuthContext'
 import { Button } from '../ui/Button'
 import { TextArea } from '../ui/Field'
+import { PrivacyToggle } from '../ui/PrivacyToggle'
 
 // Openings that produce games, shown so an empty box is a starting line rather than a blank.
 const EXAMPLES = [
@@ -26,14 +27,16 @@ export const CreateGame: React.FC<{ onCreated: (runId: string) => void; onCancel
     const [broke, setBroke] = useState(false)
 
     const edit = (next: string) => { setText(next); saveDraft(next) }
-    const { refreshBalance } = useAuth()
+    const { user, refreshBalance } = useAuth()
+    const [chosen, setChosen] = useState<boolean | null>(null)
+    const isPrivate = chosen ?? user?.private ?? true
 
     useEffect(() => { track('create_opened') }, [])
 
     const create = async () => {
         setBusy(true); setError(null); setBroke(false)
         try {
-            const { run_id } = await api.createGame(text)
+            const { run_id } = await api.createGame(text, isPrivate)
             clearDraft()
             onCreated(run_id)
         } catch (e) {
@@ -62,14 +65,15 @@ export const CreateGame: React.FC<{ onCreated: (runId: string) => void; onCancel
                     placeholder="A snail racing game where the race runs over four in-game days."
                     className="border-l-2 border-l-ember" />
 
-                <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-start gap-x-6 gap-y-3 flex-wrap">
                     <Button variant="primary" size="md" onClick={create} disabled={busy || !text.trim()}>
                         {busy ? 'Starting…' : 'Summon it · 1 credit'}
                     </Button>
-                    <span className="text-xs text-dim">
-                        One credit covers the design and the build. It takes a while.
-                    </span>
+                    <PrivacyToggle private={isPrivate} onChange={setChosen} disabled={busy} />
                 </div>
+                <span className="text-xs text-dim">
+                    One credit covers the design and the build. It takes a while.
+                </span>
 
                 {error && <p className="text-fail text-sm">{error}</p>}
                 {broke && (

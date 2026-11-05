@@ -265,7 +265,7 @@ def _advance_locked(run_id: str, result: Optional[Dict], landed: Optional[Dict],
         return
     tools = build_tools(rs, cursor.build_id)
     try:
-        conn = get_connector(llm_models.seat("build"))
+        conn = get_connector(llm_models.seat("build", games.private(run_id)))
     except UnknownModel as e:
         _finalize(run_id, rs, cursor, ok=False, error=str(e))
         return

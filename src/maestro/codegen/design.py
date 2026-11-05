@@ -140,7 +140,7 @@ def _enqueue_step(run_id: str, build_id: str, ask: str, step: str, spec_so_far: 
         messages = stages.plan_messages(spec_so_far)
     else:
         messages = _messages(ask, _state(run_id), spec_so_far)
-    conn = get_connector(llm_models.seat("design"))
+    conn = get_connector(llm_models.seat("design", games.private(run_id)))
     payload, model = conn.build_llm_job(messages, [], MAX_TOKENS)
     jobs.enqueue_job("llm", payload, game_id=run_id, build_id=build_id, model=model,
                      metadata=metadata)
@@ -250,9 +250,10 @@ def _decide(ask: str) -> Dict:
     raise ValueError(f"decide failed: {job.get('error') or 'no state'}")
 
 
-def _write(ask: str, state: str, spec_so_far: str) -> str:
+def _write(run_id: str, ask: str, state: str, spec_so_far: str) -> str:
+    conn = get_connector(llm_models.seat("design", games.private(run_id)))
     for _ in range(RETRIES + 1):
-        text = _reply_text(get_connector(llm_models.seat("design")).generate_with_tools(
+        text = _reply_text(conn.generate_with_tools(
             _messages(ask, state, spec_so_far), [], max_tokens=MAX_TOKENS))
         if text.strip():
             return text
@@ -271,7 +272,7 @@ def generate(run_id: str, ask: str) -> str:
                                        encoding="utf-8")
             state, spec = tiered_state(decided), ""
             for _ in range(CONTINUATIONS + 1):
-                spec += _write(ask, state, spec)
+                spec += _write(run_id, ask, state, spec)
                 if not missing_sections(spec):
                     break
         (d / "spec.md").write_text(spec, encoding="utf-8")

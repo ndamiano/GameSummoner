@@ -124,7 +124,7 @@ export const api = {
         request<{ token: string; user: { id: string; handle: string; role: string } }>(
             '/auth/reset', { method: 'POST', body: JSON.stringify({ token, new_password: newPassword }) }, 0),
     me: () =>
-        request<{ id: string; handle: string; role: string; email: string; balance: number }>('/auth/me'),
+        request<{ id: string; handle: string; role: string; email: string; private: boolean; balance: number }>('/auth/me'),
     logout: async () => {
         try { await fetch('/auth/logout', { method: 'POST', headers: authHeaders() }) }
         catch { /* offline / already-dead token — local clear still applies */ }
@@ -139,6 +139,11 @@ export const api = {
         setAuthToken(res.token)
         return res
     },
+    setPrivacy: (isPrivate: boolean) =>
+        request<{ ok: boolean; private: boolean }>('/auth/privacy', {
+            method: 'POST',
+            body: JSON.stringify({ private: isPrivate }),
+        }, 0),
     changeEmail: (password: string, email: string) =>
         request<{ ok: boolean; email: string }>('/auth/email', {
             method: 'POST',
@@ -162,8 +167,10 @@ export const api = {
         request<{ share_id: null }>(`/api/games/${runId}/share`, { method: 'DELETE' }),
     // Make a new game: the prompt becomes the run and the build starts. Nothing exists server-side
     // until this call, so an abandoned box leaves nothing behind.
-    createGame: (prompt: string) =>
-        request<{ run_id: string; status: string }>('/api/games', { method: 'POST', body: JSON.stringify({ prompt }) }),
+    createGame: (prompt: string, isPrivate: boolean) =>
+        request<{ run_id: string; status: string }>('/api/games', {
+            method: 'POST', body: JSON.stringify({ prompt, private: isPrivate }),
+        }),
     getGame: (runId: string) =>
         request<GameDetail>(`/api/games/${runId}`),
     // The durable build/spec event log — catch-up after a reload or a websocket gap. `after` is an

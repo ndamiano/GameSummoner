@@ -36,9 +36,11 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from config import llm_models
+from db import games
 from llm_clients.connector import get_connector
 from llm_clients.message_builder import MessageBuilder
 from maestro.codegen.staging import RUNTIME_DIR
+from tools.execution_context import get_run_id
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +205,7 @@ def _targets(png: bytes) -> Optional[List[tuple]]:
                {"type": "image_url", "image_url": {
                    "url": "data:image/png;base64," + base64.b64encode(png).decode()}}]
     try:
-        reply = get_connector(llm_models.seat("gate")).generate_with_tools(
+        reply = get_connector(llm_models.seat("gate", games.private(get_run_id()))).generate_with_tools(
             MessageBuilder("You read screenshots of browser games.").add_user(content).build(),
             [], max_tokens=4000, reasoning="low")
         msg = (reply.get("choices") or [{}])[0].get("message", {}) or {}

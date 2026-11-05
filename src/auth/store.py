@@ -35,6 +35,7 @@ class User:
     handle: str
     role: str = "user"
     email: str = ""
+    private: bool = True
 
 
 def _hash_password(password: str, salt: Optional[bytes] = None) -> str:
@@ -58,7 +59,8 @@ def _token_hash(token: str) -> str:
 
 
 def _row_to_user(row: sqlite3.Row) -> User:
-    return User(id=row["id"], handle=row["handle"], role=row["role"], email=row["email"])
+    return User(id=row["id"], handle=row["handle"], role=row["role"], email=row["email"],
+                private=bool(row["private"]))
 
 
 class HandleTakenError(ValueError):
@@ -145,6 +147,13 @@ def set_email(user_id: str, email: str) -> str:
     from tools.db_backup import mark_dirty
     mark_dirty()
     return email
+
+
+def set_private(user_id: str, private: bool) -> None:
+    with auth_db() as conn:
+        conn.execute("UPDATE users SET private = ? WHERE id = ?", (int(private), user_id))
+    from tools.db_backup import mark_dirty
+    mark_dirty()
 
 
 def get_user_by_handle(handle: str) -> Optional[User]:

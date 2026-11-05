@@ -78,7 +78,7 @@ describe('from a shared game to a summoned one', () => {
 
         fireEvent.click(screen.getByRole('button', { name: /summon it/i }))
         await waitFor(() => expect(onCreated).toHaveBeenCalledWith('r1'))
-        expect(createGame).toHaveBeenLastCalledWith(IDEA)
+        expect(createGame).toHaveBeenLastCalledWith(IDEA, true)
         expect(readDraft()).toBe('')
     })
 })

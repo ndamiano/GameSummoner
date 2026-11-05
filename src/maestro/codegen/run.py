@@ -47,10 +47,10 @@ class BuildResult:
         self.summary = summary
 
 
-def create_run(user_id: str) -> str:
+def create_run(user_id: str, private: bool = True) -> str:
     run_id = uuid.uuid4().hex[:12]
     RunState(run_id)
-    games.create_game(run_id, user_id)
+    games.create_game(run_id, user_id, private)
     return run_id
 
 

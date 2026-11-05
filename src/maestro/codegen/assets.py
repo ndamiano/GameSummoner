@@ -18,7 +18,7 @@ from db import errors, games, jobs
 from maestro.codegen.staging import game_dir
 from maestro.state import RunState
 from tools.comfyui_tools import MATTED_KINDS, build_image_payload, build_mesh_payload
-from tools.execution_context import run_scope
+from tools.execution_context import get_run_id, run_scope
 
 logger = logging.getLogger(__name__)
 
@@ -411,7 +411,7 @@ def _merge_prompt(original: str, note: str) -> str:
               "does not touch.")
     user = f"ORIGINAL: {original}\n\nCHANGE: {note}"
     try:
-        reply = get_connector(llm_models.seat("assets")).generate_with_tools(
+        reply = get_connector(llm_models.seat("assets", games.private(get_run_id()))).generate_with_tools(
             MessageBuilder(system).add_user(user).build(), [], max_tokens=300)
         text = ((reply.get("choices") or [{}])[0].get("message", {}) or {}).get("content") or ""
         merged = text.strip().strip('"')

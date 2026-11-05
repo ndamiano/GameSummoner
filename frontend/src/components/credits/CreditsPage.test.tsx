@@ -19,7 +19,7 @@ const PACKAGES = [
 const catalog = () => ({ packages: PACKAGES })
 
 const me = (balance: number) =>
-    ({ id: 'u1', handle: 'alice', role: 'user', email: 'alice@example.com', balance })
+    ({ id: 'u1', handle: 'alice', role: 'user', email: 'alice@example.com', private: true, balance })
 
 const mount = () => render(
     <RouterProvider>

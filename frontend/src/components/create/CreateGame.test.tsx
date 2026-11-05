@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { CreateGame } from './CreateGame'
 import { AuthProvider } from '../../contexts/AuthContext'
-import { api } from '../../api/client'
+import { api, setAuthToken } from '../../api/client'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
@@ -41,7 +41,26 @@ describe('CreateGame', () => {
         fireEvent.click(designButton())
 
         await waitFor(() => expect(onCreated).toHaveBeenCalledWith('r9'))
-        expect(call).toHaveBeenCalledWith('  a game about tides  ')
+        expect(call).toHaveBeenCalledWith('  a game about tides  ', true)
+    })
+
+    it('starts from the account default and sends the choice made here', async () => {
+        setAuthToken('tok')
+        vi.spyOn(api, 'me').mockResolvedValue(
+            { id: 'u1', handle: 'alice', role: 'user', email: 'a@b.c', private: false, balance: 3 })
+        const call = vi.spyOn(api, 'createGame').mockResolvedValue({ run_id: 'r9', status: 'designing' })
+        create()
+        const toggle = () => screen.getByRole('switch', { name: /quality/i })
+
+        await waitFor(() => expect(toggle().getAttribute('aria-checked')).toBe('true'))
+        expect(screen.getByText(/outside model providers/i)).toBeTruthy()
+        fireEvent.click(toggle())
+        expect(screen.getByText(/nothing leaves our service/i)).toBeTruthy()
+        fireEvent.change(box(), { target: { value: 'a game about tides' } })
+        fireEvent.click(designButton())
+
+        await waitFor(() => expect(call).toHaveBeenCalledWith('a game about tides', true))
+        setAuthToken(null)
     })
 
     it('says what went wrong when the design cannot start', async () => {

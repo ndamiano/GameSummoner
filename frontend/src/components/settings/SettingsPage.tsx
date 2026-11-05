@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { Link } from '../../router'
 import { Button } from '../ui/Button'
 import { SectionLabel, TextInput } from '../ui/Field'
+import { PrivacyToggle } from '../ui/PrivacyToggle'
 
 const Row: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
     <div className="flex items-baseline justify-between gap-4 text-sm">
@@ -24,6 +25,9 @@ const SettingsPage: React.FC = () => {
     const [emailBusy, setEmailBusy] = useState(false)
     const [emailMessage, setEmailMessage] = useState<{ text: string; ok: boolean } | null>(null)
 
+    const [privacyBusy, setPrivacyBusy] = useState(false)
+    const [privacyError, setPrivacyError] = useState<string | null>(null)
+
     const canSubmit = current && next && confirm && !busy
     const canSubmitEmail = newEmail && emailPassword && !emailBusy
 
@@ -40,6 +44,16 @@ const SettingsPage: React.FC = () => {
         } catch (e) {
             setMessage({ text: e instanceof Error ? e.message : 'Could not change the password', ok: false })
         } finally { setBusy(false) }
+    }
+
+    const changePrivacy = async (isPrivate: boolean) => {
+        setPrivacyBusy(true); setPrivacyError(null)
+        try {
+            await api.setPrivacy(isPrivate)
+            await refreshBalance()
+        } catch (e) {
+            setPrivacyError(e instanceof Error ? e.message : 'Could not change the setting')
+        } finally { setPrivacyBusy(false) }
     }
 
     const changeEmail = async () => {
@@ -73,6 +87,31 @@ const SettingsPage: React.FC = () => {
                                 </Link>
                             </span>
                         </Row>
+                    </div>
+                </section>
+
+                <section className="flex flex-col gap-3">
+                    <SectionLabel>Privacy</SectionLabel>
+                    <div className="border border-edge rounded-md bg-sunken px-4 py-3 flex flex-col gap-3">
+                        <div className="flex items-center justify-between gap-4 flex-wrap text-sm">
+                            <span className="text-slate">New games</span>
+                            <PrivacyToggle private={user?.private ?? true} onChange={changePrivacy}
+                                disabled={privacyBusy || !user} note={false} />
+                        </div>
+                        <p className="text-xs text-dim">
+                            <span className="text-slate">Private:</span> built only on hardware we rent.
+                            Nothing leaves our service.
+                        </p>
+                        <p className="text-xs text-dim">
+                            <span className="text-slate">Quality:</span> the design and the code are
+                            written by an outside model provider, currently DeepSeek. Better games, but
+                            they see what you send and may learn from it.
+                        </p>
+                        <p className="text-xs text-dim">
+                            You can choose again for each game when you summon it, and a game keeps
+                            the choice it was made with.
+                        </p>
+                        {privacyError && <p className="text-fail text-sm">{privacyError}</p>}
                     </div>
                 </section>
 

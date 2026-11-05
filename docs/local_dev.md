@@ -261,9 +261,11 @@ the "something kinda close" arm of `docs/experiments.md` (2026-08-25), so a buil
 
 Which llm entries serve each part of the pipeline: `design` (the spec and the stage plan), `build`
 (the build chain), `gate` (the error and play gates, which read screenshots), `assets` (the image
-prompt merge on a regenerate) and `worldgen`. Each is a list of entry names, and the first one
-serves. Settings load refuses a seat that is missing, empty, names an entry `llm` lacks, or is not
-one of the five. Changing model is a settings edit and a `compose restart app`.
+prompt merge on a regenerate) and `worldgen`. Each is a list of entry names in order of
+preference. A game made Quality takes the first; a Private game (the default, and any call outside
+a game) takes the first that is not `api`, so a Private game never leaves our hardware. Settings
+load refuses a seat that is missing, empty, names an entry `llm` lacks, has no entry that is not
+`api`, or is not one of the five. Changing model is a settings edit and a `compose restart app`.
 
 ### The wire format is the worker's, not a setting
 
