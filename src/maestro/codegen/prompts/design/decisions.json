@@ -115,7 +115,7 @@
    "key": "mechanics",
    "kind": "noul",
    "question": "Does this mechanic make sense for this game: {item}?",
-   "items": "mechanics.md",
+   "items": "mechanics.json",
    "keep_over": 0.6
   },
   {

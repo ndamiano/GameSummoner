@@ -289,7 +289,7 @@ src/
                          own queue) every decision in prompts/design/decisions.json in order, each
                          answer appended to the state the next question sees: the frame (2d/3d,
                          camera, time, movement, session, failure, tone, size, endings), yes/no on
-                         every mechanic in prompts/design/mechanics.md, how sure JEV is that the
+                         every mechanic in prompts/design/mechanics.json, how sure JEV is that the
                          first playable version needs each kept mechanic, then look and sound. The
                          image runs the chain without knowing what a game is. The kept mechanics are
                          banded on the first-playable probability (core >= 0.6, supporting >= 0.3,

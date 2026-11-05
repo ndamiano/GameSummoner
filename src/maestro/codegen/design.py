@@ -28,7 +28,6 @@ SECTIONS = [str(n) for n in range(12)] + ["A"]
 CONTINUATIONS = 3
 RETRIES = 1
 _HEADING = re.compile(r"^#+\s*(\d+|A)\.", re.M)
-_ROW = re.compile(r"^\| ([^|]+?) \| ([^|]+?) \|$", re.M)
 
 
 def _prompt(name: str, **slots) -> str:
@@ -39,8 +38,8 @@ def _prompt(name: str, **slots) -> str:
 
 
 def _catalogue(name: str) -> List[Dict[str, str]]:
-    rows = _ROW.findall((_PROMPTS / "design" / name).read_text(encoding="utf-8"))
-    return [{"name": n, "text": f"{n}: {d}"} for n, d in rows if n != "Mechanic"]
+    sections = json.loads((_PROMPTS / "design" / name).read_text(encoding="utf-8"))
+    return [{"name": n, "text": f"{n}: {d}"} for rows in sections.values() for n, d in rows.items()]
 
 
 def chain(ask: str) -> Dict:
