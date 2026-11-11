@@ -244,3 +244,50 @@ def test_the_landing_shell_carries_the_headline_and_listed_demos_without_javascr
     assert "a fish eating fish &amp; growing" in page and "units on a grid" in page
     assert page.index('id="prerender"') < page.index("</div>\n    <script type=\"module\"")
     assert "Games it made" not in api.app.landing_page(shell, [])
+
+
+def test_a_demo_link_unfurls_as_that_game_with_its_prompt(client, staged_game, demo_listed):
+    run_id = _game(lambda r: staged_game(r, prompt='a fox\n"chasing" <hens> & geese'))
+    (demos.demo_dir(run_id) / "index.html").write_text(
+        "<head><title>Fox &amp; Hound</title></head><body>x</body>", encoding="utf-8")
+    demo_listed.append({"id": run_id, "thumb": "assets/fox.webp"})
+    bare = _game(staged_game)
+    demo_listed.append({"id": bare})
+    shell = ('<head>\n    <meta property="og:title" content="GameSummoner — describe a game, play it" />\n'
+             '    <meta property="og:description" content="Describe a game." />\n'
+             '    <meta property="og:url" content="https://gamesummoner.com/" />\n'
+             '    <meta property="og:image" content="https://gamesummoner.com/og.png" />\n'
+             '    <meta name="twitter:image" content="https://gamesummoner.com/og.png" />\n  </head>')
+
+    row = client.get(f"/api/demos/{run_id}").json()
+    assert row == client.get("/api/demos").json()[0]
+    card = api.app.demo_card(shell, row, "https://gamesummoner.com/")
+
+    assert "describe a game, play it" not in card and "Describe a game." not in card
+    assert 'og:title" content="Fox &amp; Hound — made with GameSummoner"' in card
+    assert 'og:description" content="a fox &quot;chasing&quot; &lt;hens&gt; &amp; geese"' in card
+    assert f'og:url" content="https://gamesummoner.com/d/{run_id}"' in card
+    assert f'og:image" content="https://gamesummoner.com/api/demos/{run_id}/thumb"' in card
+    assert f'twitter:image" content="https://gamesummoner.com/api/demos/{run_id}/thumb"' in card
+    assert "og.png" not in card
+
+    bare_card = api.app.demo_card(shell, client.get(f"/api/demos/{bare}").json(), "https://gamesummoner.com")
+    assert bare_card.count('content="https://gamesummoner.com/og.png"') == 2
+
+
+def test_a_demo_link_exists_only_for_listed_games_with_a_snapshot(client, staged_game, demo_listed):
+    listed = _game(staged_game)
+    unlisted = _game(staged_game)
+    no_snapshot = _game()
+    demo_listed.extend([{"id": listed}, {"id": no_snapshot}])
+    dead_share = client.get("/g/nosuchshare1")
+
+    assert client.get(f"/api/demos/{listed}").status_code == 200
+    for run_id in (unlisted, no_snapshot, "nosuchdemo"):
+        assert client.get(f"/api/demos/{run_id}").status_code == 404
+        page = client.get(f"/d/{run_id}")
+        assert (page.status_code, page.text) == (dead_share.status_code, dead_share.text)
+    if api.app._frontend_dist.is_dir():
+        page = client.get(f"/d/{listed}")
+        assert page.status_code == 200
+        assert f'/d/{listed}"' in page.text and 'og:description" content="a demo game"' in page.text

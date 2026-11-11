@@ -13,8 +13,14 @@ const DemoCard: React.FC<{ demo: Demo }> = ({ demo }) => {
     const [session, setSession] = useState<string | null>(null)
     const [busy, setBusy] = useState(false)
     const [expanded, setExpanded] = useState(false)
+    const [copied, setCopied] = useState(false)
     const stageRef = React.useRef<HTMLDivElement>(null)
     const clamped = demo.prompt.length > CLAMP_AT && !expanded
+
+    const copyLink = async () => {
+        try { await navigator.clipboard.writeText(`${window.location.origin}/d/${demo.run_id}`); setCopied(true) }
+        catch { setCopied(false) }
+    }
 
     const play = async () => {
         setBusy(true)
@@ -57,7 +63,10 @@ const DemoCard: React.FC<{ demo: Demo }> = ({ demo }) => {
                     )}
             </div>
             <div className="px-4 py-3 flex flex-col gap-1.5">
-                <SectionLabel>The words that summoned it</SectionLabel>
+                <div className="flex items-center justify-between gap-2">
+                    <SectionLabel>The words that summoned it</SectionLabel>
+                    <Button variant="ghost" onClick={copyLink}>{copied ? 'Copied' : 'Copy link'}</Button>
+                </div>
                 <p className="text-sm text-slate leading-relaxed">
                     {clamped ? `${demo.prompt.slice(0, CLAMP_AT).trimEnd()}… ` : `${demo.prompt} `}
                     {demo.prompt.length > CLAMP_AT && (

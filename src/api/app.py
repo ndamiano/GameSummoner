@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -259,23 +259,32 @@ async def play_index(surface: str, run_id: str):
 if _runtime.is_dir():
     app.mount("/play", StaticFiles(directory=_runtime, html=True), name="play")
 
-_OG_META = re.compile(r'\s*<meta (?:property="og:(?:title|url|image)"|name="twitter:image")[^>]*>')
-_OG_TITLE_URL = re.compile(r'\s*<meta property="og:(?:title|url)"[^>]*>')
+
+def _og_card(html: str, title: str, url: str, image: Optional[str] = None,
+             description: Optional[str] = None) -> str:
+    tags = {'property="og:title"': f"{title} — made with GameSummoner", 'property="og:url"': url}
+    if image:
+        tags['property="og:image"'] = tags['name="twitter:image"'] = image
+    if description:
+        tags['property="og:description"'] = description
+    for attr in tags:
+        html = re.sub(rf"\s*<meta {re.escape(attr)}[^>]*>", "", html)
+    metas = [f'<meta {attr} content="{escape(content, quote=True)}" />' for attr, content in tags.items()]
+    return html.replace("</head>", "    " + "\n    ".join(metas) + "\n  </head>", 1)
 
 
 def share_card(html: str, share_id: str, base: str) -> str:
     base = base.rstrip("/")
-    title = escape(share_store.meta(share_id).get("title") or "A GameSummoner game", quote=True)
-    tags = [f'<meta property="og:title" content="{title} — made with GameSummoner" />',
-            f'<meta property="og:url" content="{base}/g/{share_id}" />']
-    replaced = _OG_META
-    if share_store.thumb(share_id):
-        image = f"{base}/api/shares/{share_id}/thumb"
-        tags += [f'<meta property="og:image" content="{image}" />',
-                 f'<meta name="twitter:image" content="{image}" />']
-    else:
-        replaced = _OG_TITLE_URL
-    return replaced.sub("", html).replace("</head>", "    " + "\n    ".join(tags) + "\n  </head>", 1)
+    return _og_card(html, share_store.meta(share_id).get("title") or "A GameSummoner game",
+                    f"{base}/g/{share_id}",
+                    f"{base}/api/shares/{share_id}/thumb" if share_store.thumb(share_id) else None)
+
+
+def demo_card(html: str, demo: dict, base: str) -> str:
+    base = base.rstrip("/")
+    return _og_card(html, demo["title"], f"{base}/d/{demo['run_id']}",
+                    f"{base}{demo['thumb_url']}" if demo["thumb_url"] else None,
+                    " ".join(demo["prompt"].split()))
 
 
 def landing_page(html: str, listed: list[dict]) -> str:
@@ -319,6 +328,14 @@ if _frontend_dist.is_dir():
         if not share_store.exists(share_id):
             return HTMLResponse(html, status_code=404)
         return HTMLResponse(share_card(html, share_id, _play_settings()[1] or str(request.base_url)))
+
+    @app.get("/d/{run_id}", include_in_schema=False)
+    async def demo_page(run_id: str, request: Request):
+        html = (_dist_root / "index.html").read_text(encoding="utf-8")
+        demo = demos.demo_row(run_id)
+        if demo is None:
+            return HTMLResponse(html, status_code=404)
+        return HTMLResponse(demo_card(html, demo, _play_settings()[1] or str(request.base_url)))
 
     @app.get("/", include_in_schema=False)
     async def landing():

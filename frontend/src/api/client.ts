@@ -155,6 +155,8 @@ export const api = {
     // The landing page's demo surface — public, owner-curated server-side.
     listDemos: () =>
         request<Demo[]>('/api/demos'),
+    getDemo: (runId: string) =>
+        request<Demo>(`/api/demos/${runId}`),
     demoPlaySession: (runId: string) =>
         request<{ url: string; origin: string }>(`/api/demos/${runId}/play-session`, { method: 'POST' }),
     getShare: (shareId: string) =>

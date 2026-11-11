@@ -24,14 +24,31 @@ def _thumb_of(run_id: str) -> Optional[str]:
     return next((e["thumb"] for e in _demo_entries() if e["id"] == run_id), None)
 
 
+def demo_row(run_id: str) -> Optional[Dict]:
+    entry = next((e for e in _demo_entries() if e["id"] == run_id), None)
+    if entry is None or not demos.exists(run_id):
+        return None
+    return {"run_id": run_id,
+            "title": demos.title(run_id) or run_id,
+            "prompt": demos.meta(run_id).get("prompt", ""),
+            "thumb_url": f"/api/demos/{run_id}/thumb" if entry["thumb"] else None}
+
+
+def _require_demo(run_id: str) -> Dict:
+    row = demo_row(run_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="not a demo")
+    return row
+
+
 @router.get("", response_model=List[Dict])
 async def list_demos():
-    """Each listed demo that has a snapshot, with the prompt that made it."""
-    return [{"run_id": e["id"],
-             "title": demos.title(e["id"]) or e["id"],
-             "prompt": demos.meta(e["id"]).get("prompt", ""),
-             "thumb_url": f"/api/demos/{e['id']}/thumb" if e["thumb"] else None}
-            for e in _demo_entries() if demos.exists(e["id"])]
+    return [row for row in (demo_row(e["id"]) for e in _demo_entries()) if row]
+
+
+@router.get("/{run_id}", response_model=Dict)
+async def get_demo(run_id: str):
+    return _require_demo(run_id)
 
 
 @router.get("/{run_id}/thumb")
@@ -54,8 +71,7 @@ async def demo_thumb(run_id: str):
 async def demo_play_session(run_id: str):
     """A play session anyone may mint, for listed games only. The grant opens this one
     snapshot's static files and nothing else."""
-    if run_id not in {e["id"] for e in _demo_entries()} or not demos.exists(run_id):
-        raise HTTPException(status_code=404, detail="not a demo")
+    _require_demo(run_id)
     token = playgrants.issue_handoff(playgrants.target("demos", run_id))
     if token is None:
         raise HTTPException(status_code=429, detail="too many open sessions — try again shortly")

@@ -3,6 +3,7 @@ import LoginScreen from './components/LoginScreen'
 import ResetScreen from './components/ResetScreen'
 import Landing from './components/public/Landing'
 import SharedGame from './components/public/SharedGame'
+import DemoGame from './components/public/DemoGame'
 import ErrorBoundary from './components/ErrorBoundary'
 import { useAuth } from './contexts/AuthContext'
 import { RouterProvider, useRouter } from './router'
@@ -23,6 +24,7 @@ const Routes = () => {
     const { path } = useRouter()
     if (path === '/reset') return <ResetScreen />
     if (path.startsWith('/g/')) return <SharedGame shareId={path.slice(3)} />
+    if (path.startsWith('/d/')) return <DemoGame runId={path.slice(3)} />
     return token ? <Layout /> : <PublicSite />
 }
 
