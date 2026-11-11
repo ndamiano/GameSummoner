@@ -3017,3 +3017,315 @@ reaches Opus's 8 on this model. "Not in the training data" does not mean it nail
 means it has the recipe when the ask is one the field has already written a thousand times.
 
 **Details.** `labs/subway-fps/README.md`.
+
+## 2026-11-05 — a short list of defined systems in place of the 157-row mechanics catalogue (Flash-Next on the local card; JEV through llama-swap's `gamesummoner-decide`)
+
+**Question.** The designer writes the game from the words the decide step keeps. Across 111 asks
+the catalogue keeps the same words whatever the ask (difficulty ramp on 78 of 111, objectives 77,
+decoration 73) and anywhere from 4 words to 97. Does a short list of systems, each a name with a
+one-sentence definition, asked one at a time as "Does this system make sense for this game", hand
+the designer the game the ask describes?
+
+| | catalogue as prod asks it | systems list |
+|---|---|---|
+| Rows, line | 157, kept over 0.6 | 46 candidates, kept over 0.7 |
+| Predicted core systems, six "a game like X" asks | 30 of 36 covered, in 378 words | 30 of 36 kept, in 58 systems |
+| Words handed to the designer, 24 build asks | min 7, median 40, max 83 | min 0, median 4, max 18 |
+
+The predictions and the mapping of old rows to systems are Claude's. The definition does the
+work: on the ghost-bakery ask the bare name "survival" was kept at 0.76 and 0.87, and with its
+definition it never passed 0.13 in 20 rounds. The wording of a row decides it: rewording
+roguelike took the two roguelike asks from 0.58 and 0.56 to 0.96 and 0.93. The designer writes a
+section for nearly every word it is handed (844 of 985 kept words are a heading of the design,
+86%, by substring match), so the list sets the size of the game. Handed the definitions, it also
+builds every clause: "such as spikes, lava or falling" put lava in the frog platformer design 14
+times, and rows reworded without a "such as" list or a "may" option brought it to 0.
+
+Two builds of "a platformer where you play as a frog" from a systems design, on prod's staged
+chain: `100f46b508a3` (names only; nine stages, two retried once, 290 steps over 11 attempts, 62
+minutes) and `fb0aa5866ea8` (tight rows with definitions; nine stages on the first attempt, 223
+steps, 38 minutes), both gates at 0 rounds on each. The first drew the frog near-black on a dark
+background, a builder bug. Nick on it: "Outside of not being able to see the frog, this seems
+like the first game platformer that was actually completable."
+
+**Verdict.** Works as a decide step: the same share of what each game needs in about a sixth of
+the words, and a design the builder finishes. One ask built, one play; the control was built
+unstaged, so the play does not say whether the list or the staged chain made it completable. Nick
+has not played the second build. The designs are plain: nothing in the platformer is particular
+to a frog beyond its look, which is where `labs/pitch-interrogate` starts.
+
+**Details.** `labs/mechanics-curation/README.md`.
+
+## 2026-11-06 — the stage plan made one tier at a time (local 5090, Flash-Next IQ3_S via Basalt)
+
+**Question.** Prod's planner asks for exactly nine stages. On the by-hand zombie design (51 KB,
+four tiers, 15 buildables; run `26d2aeb66c16`) all nine went to tier 1 and tiers 2 to 4 were
+never planned. Planned one tier at a time, with the code map of what is already built in the
+planner's hands (`plan_tier.txt`, 3 to 9 stages per tier), does the rest of the design get built
+without breaking what is under it? One run, `ac23f047b078`, forked from the tier 1 build:
+
+| tier | stages | stage checks | gates | minutes | probe after the tier |
+|---|---|---|---|---:|---|
+| 2 | 6 | all first attempt | play gate 1 round, fix build of 81 steps | 30 | tier 1 7 of 7, tier 2 5 of 5 |
+| 3 | 7, after a split by hand | all first attempt | clean | 27 | adds tier 3 2 of 2 |
+| 4 | 4 | stage 3 retried once | clean | 21 | adds tier 4 2 of 2 |
+
+17 stages, 629 build steps and 81 fix steps, 758 jobs, none failed, 84 minutes. The game's code
+went from 171 KB to 413 KB, so every stage started over the 100 KB pre-read cap, from the code
+map and the files its stage text named. No tier 1 check broke after any tier. The planner's tier
+3 came back as four stages with all of the law in one and both weapons, stun and the donut lure
+in another; those two were replaced by hand with five, so tier 3 does not measure the planner's
+cut. The tier 2 to 4 probe checks were written the same night and are best effort.
+
+A change build on the result, "can you make the art a bit better?" (60 steps), put all of its
+work on the ground and lighting and redrew no character, building or junk spot. Nick on the game
+after it: "Overall, I lean towards this being a solid 7/10 for a first draft." "It seems to work
+properly, which is a good thing!" What he named as wrong ("a zombie that looks... not zombie",
+a build menu with "a bunch of \"undefined\" in it", "free donuts extending past the sign") throws
+no error and fails no check: it can only be found by looking. "The fact that it's blind is
+definitely part of the problems."
+
+**Verdict.** Works, on one run with one hand intervention: all four tiers of the design were
+scheduled and built on prod's chain and the earlier tiers kept working. The whole game was about
+118 minutes of wall time, roughly $3 to $4 at the 6000 Pro rates (an estimate from local minutes,
+not measured on prod). What the run left open is looks, taken up in `labs/builder-eyes`.
+
+**Details.** `labs/tier-chain/README.md`.
+
+## 2026-11-06 — Flash-Next looks at screenshots of its own game, then a blind fix build from its list (Flash-Next through the local llama-swap)
+
+**Question.** Nothing in the build looks at the game and asks whether it looks right, and every
+defect Nick named on the four-tier zombie game `ac23f047b078` can only be found by looking. Shown
+four screenshots of that game (title, start, a staged yard, the build menu) with one open
+question, does Flash-Next name the defects, and does a builder that still cannot see fix them
+from the list? Ten defects were written down before the run, four of them Nick's.
+
+| | look | blind fix build from the look's list |
+|---|---|---|
+| Run | four calls, 70 s in all | 200-turn cap in 24.5 minutes, `done` never called |
+| Listed | 22 problems, 2 of them wrong | of the 20 real ones: 13 gone, 2 papered over, 1 moved, 4 not fixed |
+| The ten written before | six named outright, two partly, two missed | |
+| Nick's four | three outright, one partly | none fixed: three untouched in effect, one covered with labels |
+
+The look finds mistakes in text and layout nearly completely and quotes small text exactly
+("CARRIED 1/3AINS", "CARDBOARDROPE"), and says when a thing does not look like what it is ("only
+a tiny green head is visible with no clear body"). Its weak spot is which drawn thing is which:
+it called the Dumpster "the gray object meant to be a Fridge", and the fix build redrew the real
+Fridge. The fix build left the game dead (a draw loop that threw on the first frame) until the
+play gate caught it and a 22-step fix build repaired it; after that every probe check of tiers 1
+to 4 passes. Told buildings "cannot be identified", the blind builder put a text name tag under
+each. A second look listed 16 problems, seven of them made by the fix.
+
+Nick on the fix run: "I would lean towards it improved, but still not great. Okay, this has gone
+on long enough."
+
+**Verdict.** Works for layout and text, idea failure for looks while the fixer is blind. One
+game, one look and one fix. 22 findings in one note took the full 200 turns and did not finish,
+and a finding that is right about the text but wrong about the place leaves the bug where it is.
+
+**Details.** `labs/builder-eyes/README.md`.
+
+## 2026-11-06 to 11-07 — a pitcher and an interrogator in place of the decide step (Flash-Next on the local card)
+
+**Question.** The decide step can only keep or drop rows written before the ask existed, so it
+cannot name anything particular to the ask. Do two model roles, a pitcher that commits to one
+game and an interrogator that questions it and writes the decisions sheet, give a design with
+character that the builder still finishes?
+
+The interview's shape, one run per arm on the frog platformer ask: a pitcher holding only its
+pitch overturned none of 15 guesses; one that first wrote a page for itself overturned 3 of 10,
+and the page's particular things did not reach the design; an interrogator handed the page asked
+nothing; told to list the page's cracks and ask without guesses it asked 27 questions in six
+rounds and about twelve of the eighteen in rounds 3 to 6 were about things only the answers had
+introduced; told an answer closes its crack, all 27 quoted the page; with no limit on questions a
+round it asked 15 in one round and ended the interview itself. The ninth arm (Nick's) runs JEV's
+decide step on the 50 systems first and the page is written with only the kept systems in hand.
+
+| Run | Ask, chain | Build | Nick |
+|---|---|---|---|
+| `100f46b508a3` | frog, mechanics-curation control | 62 min | "the first game platformer that was actually completable" |
+| `a60ed53b9a82`, `7bbc07a6171b` | frog, page and cracks interview | 72 min, 52 min | "Cracks2/3 have *WAY* fucking more character. They feel like a game about a frog. However, they're both mechanically a giant mess." |
+| `e0c46862c2cf` | frog, ninth arm | 45 min | "almost exactly what I expect. It's a bit bland, but it feels right" |
+| `d2321b3512ff` | cats tower defense, control | 38 min | "functions, and is fine. It's not good, it's not bad" |
+| `b8351a8361eb` | cats, ninth arm | 38 min | "I have no fucking clue what's going on. The screen is a huge fucking mess" |
+| `201866832990` | cats, seventh arm (pitcher picks from the list) | 46 min | "I have no idea what's going on. It's like a market?" |
+
+The seventh arm's frog build (`01eeafdb6f7c`, 38 min) has no play verdict in the log. On the
+cats ask the ninth arm's build cannot be won: the design's numbers make the overwhelm rule fire
+on the first wave and it is permanent. Its sheet carried only the three band lines of JEV's 23
+decided lines, so the design ruled the rest "left open" and invented a look, a HUD and one
+endless run; and the interview turned one sentence of the page's texture into rules (98 design
+lines matching warning, repair, melt or tilt against 1 in the control's). The seventh arm on cats
+is not a tower defense: the pitcher built a night-watch management sim out of the list. The log
+calls the sheet gap an implementation gap; the tenth arm written to fix it has no run.
+
+**Verdict.** Nick's call: the control won the cats ask heavily, the ninth arm won the frog ask
+handily. One run per arm, two asks. With JEV fixing the verbs and bands the page's world
+survived on a one-screen platformer; on the tower defense the interview's rulings made every
+stall a target and the design has no path at all. Led to `labs/skeleton-first`.
+
+**Details.** `labs/pitch-interrogate/README.md`.
+
+## 2026-11-07 — the genre's framework in placeholders first, the concept's things replace them (Flash-Next on the local card through llama-swap)
+
+**Question.** Both cats builds of the pitch-interrogate night fail from opposite sides: the
+control has the tower-defense skeleton and no world, the ninth arm the world and no path. Nick's
+own sequence with an AI is a "crappy framework to play it" in placeholder shapes, then the
+concept's things in place of the placeholders, then the UI. If the design is his concept
+paragraph (plus JEV's 23 decided lines and one paragraph on how it is built) and a process
+planner (`plan_process.txt`) cuts the stages in that order, is the game the one asked for? The
+builder, stage framing, gates and model are prod's.
+
+One run on "a tower defense game where cats defend a fish market", `816d5ac86674`. The plan call
+took 172 s and returned 23 steps: 1–9 the framework in placeholder shapes, 10–13 the
+replacements, 14–17 the UI, 18–23 the game, ending on a balance step that tunes numbers only.
+Build 64 minutes, 23 stage builds, 606 jobs, none failed, every stage checked once with 0 errors,
+no fix build, play gate 0 rounds. After stage 7 the screen is a gray path, black circles with
+yellow bars and a dashed placement cursor; after stage 13 the fish display, docks, crates with
+cats sitting on them and a mouse hole at the spawn, with the path, placement and waves as they
+were. The replacements changed no rule: `level.js` is untouched from stage 9 to 13. The finished
+game has three levels on one map and three cats; level 1 with nothing placed fails in wave 3, and
+with a sleepy and a pounce cat beside the first leg it clears at wave 4 with 3/10 lives. Defects
+seen: two strings drawn over each other in the bottom status strip, no title screen on open, a
+sticky placement mode.
+
+Nick: "Damn, this is probably the best version of this game that we've got. By like a lot. It's
+*actually* the game I wanted, and while it's still got issues, it actually looks good."
+
+**Verdict.** Works. Against the same ask's control `d2321b3512ff` ("functions, and is fine") and
+ninth arm `b8351a8361eb` ("a huge fucking mess"), with the same builder, model and gates. One
+run, one ask, and the concept was Nick's own paragraph; prod has no Nick, so the next run
+(`labs/bible-first`) has the model write it.
+
+**Details.** `labs/skeleton-first/README.md`.
+
+## 2026-11-08 — the design stage as one paragraph that names the nearest game shape (DeepSeek API, prod `deepseek-4.1` entry)
+
+**Question.** The naked path does well when the ask resolves to a canonical shape with its
+feature tags (2026-11-07). Can the design stage be one llm call that names the nearest shape and
+view, lists the core systems as on-screen things and carries every noun of the ask, in 150 words
+or fewer, with the build single-shot from that paragraph? One run on the bakery ghost ask,
+against the chain on the same model (`6382ea1e857f`):
+
+| | paragraph `2997d5c16447` | chain `6382ea1e857f` |
+|---|---|---|
+| Design | 99 words, one call, $0.002 | the shipped staged chain |
+| Build | 58 steps to `done`, 0 fix rounds | 9 stages |
+| Wall / cost | 20 min / $0.28 | 42 min / $0.37 |
+| Nick | 6 | 6.6–7 |
+
+The paragraph picked a top-down single-screen Pac-Man-style collect-and-chase and kept every noun
+of the ask; nothing opposes the ghost but the clock. The game boots with no console errors: a lit
+bakery, six customers on patrol, a scare radius with a cooldown bar, a pastry quota, a sunrise
+bar. Nick: "Honestly, this one was kinda clean… The 'game' is not really good, but mechanically
+it works, the aesthetic works decently well, there's a bit of personality to it, but it feels...
+not good? The gameplay itself is off. people walk into the bakery with bread, then you spook them
+and collect the bread. It doesn't feel like a bakery. They enter with the bread lol." And: "Why
+is the ghost stealing pastries?… what's the situation? Why is this happening?… This ask isn't an
+'only gameplay' ask."
+
+**Verdict.** Works as a build, idea failure as a quality step: naming the nearest shape bends the
+fiction to the shape, and the shape has no room for the why. Not adopted. One run, one ask. Led
+to `labs/bible-first` and `labs/genre-first`.
+
+**Details.** `labs/template-ask/README.md`.
+
+## 2026-11-08 — a story bible, then the minimum that is a game, then the skeleton-first build, on five asks (local 5090, Flash-Next)
+
+**Question.** The design stage has never written a premise. With JEV's decisions kept, the model
+writes a bible of the game we want (Story / World / Content / A Session / Resolution, 600–1,200
+words), then the minimum that turns it into a game (a concept of 150 words or fewer and how it is
+built), then skeleton-first's process planner cuts the stages. Does the loop come from the
+fiction, and is the result a playable game that is the thing asked for? One run per ask, private,
+every seat Flash-Next:
+
+| | bakery `2546d62858f8` | cats `14229225094c` | zombie `a637487dd875` | wizardcat `3359cb575c68` | alienfarm `1a6ed3d9ea7a` |
+|---|---|---|---|---|---|
+| Has a why | yes | yes | yes | yes | yes |
+| Minimum has win + loss | yes | yes | no (planner wrote a "no failure" stage) | yes | no, by JEV's ruling |
+| Stages / fix rounds | 24 / 0 | 21 / 0 | 23 / 0 | 24 / 0 | 24 / 1 (22 steps) |
+| Wall | 84 min | 76 | 66 | 79 | 93 |
+| Nick (2026-11-09) | a game, barely: one level, pastries on the ground, scaring has no point, die while hidden, "weird platformer" | a game, "an actual game from an amateur": 3 towers, 5 levels, no upgrades, towers unexplained, cluttered | not a game: unreadable font, bonk people 20×, gate opens, nothing changes | not a game: no menu, cards unexplained, level 1 uncompletable, Quit does nothing; "undercooked by a LOT" | not a game: unreadable font; plant, water, collect plants; shop does "something" |
+
+All five booted clean with no console errors and every stage check green. Nick's first read was
+"the only one that came out with a working game is cats", then bakery is "a game, I was too
+harsh". On the bakery ask the loop closes on the model whose 2026-10-30 build (`e30b96b10489`, 4)
+did not, but the bible's own loop (scare, then steal) is absent from the game: pastries lie on
+the ground and scaring does nothing. The cats game is a reskin of a tower defense (cats operate
+weapons) where `816d5ac86674`, from Nick's concept, grew its towers from the fiction. What the
+three misses share is not the bible: an HUD font that never loaded on two, no title screen and a
+dead Quit on one, a loop planned with no end on one. The wizardcat and alienfarm plans "failed
+to parse" on their first runs; both were the lab's own 20,000-token cap cutting the reply.
+
+**Verdict.** Two of five clear the floor, the two asks whose shape the model has a template for.
+The bible gave all five a why and none of the three misses a loop a player can see. The gates
+said yes on all five: they proved the games run, not that they are games. One run per ask.
+
+**Details.** `labs/bible-first/README.md`.
+
+## 2026-11-09 — the generic game of the genre first, the theme applied after, by text and by a mockup picture (local 5090, Flash-Next; mockup by Qwen-Image 2512)
+
+**Question.** Nick on bible-first: "we're sacrificing in both places, gameplay and aesthetic, to
+make 'any game the user types'." If phase 1 builds the generic game of the ask's genre with no
+theme in any stage, and phase 2 is one `change` build that renames and redraws and may change no
+rule or number, is the result a complete game that is also the thing asked for? One run on the
+cats tower defense ask, `1730d01639bc`.
+
+Phase 1: the genre call listed 16 features with no word of the ask, the plan parsed first try
+into 24 stages, and the build took 69 minutes, 24/24 stages, zero retries, 624 jobs, 0 failed.
+Every listed feature is on screen as labelled grey boxes; it is the first build on this ask with
+upgrades and tower stats on screen. Nick: "this feels fine for a TD, it's a bit easy, but overall
+it's fine." Phase 2, three `change` passes on that same generic game:
+
+| | text only, 66-row table | the table plus a mockup screenshot | a ~290-word note plus the mockup |
+|---|---|---|---|
+| Pass | 16 min, 153 llm turns, 0 image jobs | 26 min, ~200 turns | 31 min, 149 llm turns, 12 comfy jobs |
+| Rules | every numeric constant identical to the generic game | four cats and four levels built, `hp` added, ranges retuned | every number identical, three kinds, three levels |
+| Screen | every HUD label renamed, walkers still boxes labelled "Fish Thief" | bars, portraits and water corner match the mockup; a second cluttered HUD row | exactly the mockup's inventory, the second HUD row gone |
+| Nick | "The redraw portion was awful. I don't want to spend time on that." | no verdict in the log | "It looks so much better." "It works properly… probably a bit unbalanced being a bit too easy, but it works properly." |
+
+The mockup is one of four Qwen-Image 2512 screenshots of the finished game, picked by hand, from
+a prompt written by hand; the short note says "the picture is the whole inventory of the screen".
+With it the builder called `generate_media` twelve times, unasked, the first time on this run.
+Between the text pass and the picture arms, assets were rendered by hand for the model to wire
+in; Nick stopped it: "what you made is not what I want."
+
+**Verdict.** Phase 1 works: a complete generic tower defense with zero retries. Phase 2 as a
+text note is an idea failure for the look, not for the names. A mockup picture in the builder's
+input moves look and layout a long way on the same model, and holds the rules when the text
+beside it is short: the picture carries where and how, the text carries what exists. One run,
+one ask, with the mockup prompt, the pick and the note written by hand. Continued as
+`labs/mockup-first`.
+
+**Details.** `labs/genre-first/README.md`.
+
+## 2026-11-09 to 11-10 — the genre and mockup chain with nobody in it, on the bakery ghost ask (local 5090, Flash-Next; mockup by Qwen-Image 2512)
+
+**Question.** In genre-first the mockup prompt, the pick of four and the note were written by
+hand, on the ask where everything already works. Run with nobody in it (genre, generic build, the
+model writes the naming note and the mockup description, Qwen-Image paints it with no picking, a
+`picture` pass, then a `compare` pass shown the mockup beside screenshots of the game as built),
+does the chain reach the bakery ghost ask? One run, `97cdc61d2da5`.
+
+| | generic build | picture pass | compare pass |
+|---|---|---|---|
+| Run | 24/24 stages, 89 min, one retry, 688 jobs, 0 failed | one change build, 50 min, 0 failed jobs | one change build, 29 min, 0 failed jobs, no new images |
+| Screen | grey boxes and a wall of text; the level card shows take 2 of 5, 3 scares, 60 s, a detection meter | pixel-art bakery, ghost and customer sprites, sight cones, the mockup's HUD exactly | a plank floor strip, wall shelves of pastries and counters behind the platform |
+
+The genre call named a stealth game and the ask's verbs survived as mechanics (a scare that
+startles nearby people, which opens a window to grab); the plan put that loop at stage 4. Before
+the picture phases ran Nick asked whether a mockup of one screen would make everything look like
+it, and both notes were rewritten: the picture is one example moment that decides style and HUD,
+not level layout, positions or counts. That held: the level layout stayed the generic level's.
+The model asked for 11 images unprompted in the picture pass. Defects: the painted mockup
+misspells two labels ("PASTIES", "FLIGHT") and the picture pass copied them into the HUD although
+the note has the right words; the two customers stand on top of each other; the title and level
+cards kept the generic text wall. The compare pass fixed none of these, and its background
+pastries now look like the ones to grab.
+
+**Verdict.** Unjudged: Nick has not played `generic/`, `picture/` or `compare/`. On the
+screenshots the chain reached a themed bakery ghost game with nobody in it, the picture beat the
+text on labels, and the compare pass bought little and may have cost readability. One run, one
+ask.
+
+**Details.** `labs/mockup-first/README.md`.
