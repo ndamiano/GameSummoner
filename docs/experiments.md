@@ -2979,3 +2979,41 @@ Nick on the Opus game: "the claude one was obvious lol. Still the best one we've
 **Verdict.** With the harness held fixed, the model is the gap: Opus 8, DeepSeek 6.6–7, Flash-Next
 4, whose core loop does not close. DeepSeek gets most of the way to Opus at under 2% of its cost:
 $0.37 off-peak ($0.74 at peak) against $0.71–1.15 for a recent prod Flash-Next game. One ask, one game per model.
+
+## 2026-11-07 — the Reddit subway FPS prompt, naked and through the chain, on DeepSeek V4.1 Flash (DeepSeek API, prod `deepseek-4.1` entry)
+
+**Question.** A Reddit post shows a detailed three.js subway-station FPS from one prompt, 180K
+generated tokens, "Deepseek v4.1 1017 UD-IQ3_S" on a 5090 + 256 GB box; a commenter on the same
+quant got two unplayable zero-feedback runs. That model is DeepSeek V4.1 Flash 1017 (the only
+V4.1 that fits 288 GB at IQ3_S; DeepSeek's API lists only it and V4-Pro), the model prod's
+`deepseek-4.1` entry already calls. Is the post real, and why do their games look better than
+ours? Three public runs, every llm call on `deepseek-4.1`, art on the local 5090:
+
+| | naked subway `05a120cf7a0c` | chain subway `11b51c904e1b` | naked wizard cat `ac59959e6874` |
+|---|---|---|---|
+| Ask | the post's prompt, verbatim (31 words) | the same | "roguelike deckbuilder where you're a wizard cat climbing a tower" |
+| Design | the prompt is `design.md` and the user message; no design write, no JEV, no plan | 17,395 words; 10 stages | the prompt, as the naked subway |
+| Steps | 52, `done`, 0 fix rounds | 265 + 51 fix | 144 + 23 fix |
+| Wall / cost | 17 min / $0.21 | 64 min / $0.98 | 39 min / $0.48 |
+| Output | 114K tokens; one `index.html`, 121 KB, all procedural, no art call | 11 image jobs | 198K tokens; one art call |
+| Nick | "pretty solid all things considered" | 6.5, "better than the plain one in many ways, and worse in many ways" | ~7, "a near 1 for 1 copy of Slay the Spire, with a worse map and probably fewer options … just kinda fine" |
+
+The post is real: the same model on our harness gets there in 17 minutes and $0.21, with no
+feedback round. Not memorised: the commenter's zero-feedback runs failed, and what the naked
+path reproduces is the genre's canonical game (the three.js FPS demo, Slay the Spire), so quality
+tracks how good that template is and how concretely the ask names its systems. The chain on the
+same prompt spent 4.6× the money on systems the ask never named (three weapons, crowbar, dash,
+dodge, sneak, minimap, difficulty tiers, leaderboard) and lost the "high details" the ask did
+name: a near-black station with bare walls against the naked run's tiled walls, columns, posters
+and train. On the vague ask the chain's earlier game (2026-10-19, 6.5, "so messy") and the naked
+one (~7, derivative) sit half a point apart with opposite defects: original and messy, coherent
+and a copy.
+
+**Verdict.** The gap in our games is not the model, not the harness, and not the design chain on
+its own: it is the ask class. An expert's concrete prompt builds naked to the Reddit video's
+class; a vague ask builds naked to a competent clone of the genre's canonical game; the design
+chain adds breadth to either at 2–5× the cost and takes coherence or detail away. Neither path
+reaches Opus's 8 on this model. "Not in the training data" does not mean it nails any game: it
+means it has the recipe when the ask is one the field has already written a thousand times.
+
+**Details.** `labs/subway-fps/README.md`.
