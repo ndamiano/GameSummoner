@@ -377,9 +377,10 @@ second, so it is never empty where the webhook is reachable. Checkout returns th
 
 ### `demo_games`
 
-The list of run ids the landing page serves unauthenticated, in the order shown
-(`api/routers/demos.py`). What is served is the snapshot `python -m maestro.demos snapshot <run_id>`
-copied into `runtime/demos/` — a listed id with no snapshot is skipped, and no later build of the
+The list of run ids the landing page serves unauthenticated, in the order shown, each
+also reachable directly at `/d/<run_id>` (`api/routers/demos.py`). What is served is the snapshot
+`python -m maestro.demos snapshot <run_id>` copied into `runtime/demos/` — a listed id with no
+snapshot is skipped (and its `/d/` link 404s), and no later build of the
 run touches the snapshot. Curation is a deploy-time decision: nothing a build does can put a game
 here. Empty means no demo surface.
 

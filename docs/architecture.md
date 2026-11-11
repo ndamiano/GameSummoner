@@ -51,8 +51,9 @@ first, and the first rung that takes the launch wins.
 
 ### Frontend
 
-We have a react vite frontend that provides several demos of games created with GameSummoner, buy
-credits, build and edit games, and play the games you've created.
+We have a react vite frontend that provides several demos of games created with GameSummoner (each
+also at its own shareable link, `/d/<run_id>`), buy credits, build and edit games, and play the
+games you've created.
 
 ### Auth
 

@@ -35,7 +35,7 @@ Durable state lives on **four named Docker volumes**, all outside the rsync'd so
   docker-compose.yml).
 - `maestro-games` → `/app/runtime/games`: staged playable bundles served at `/play/games`.
 - `maestro-demos` → `/app/runtime/demos`: the landing page's demo snapshots, served at
-  `/play/demos`. A snapshot is a copy taken once; a rebuild, fix or change of the same run
+  `/play/demos` and linked as `/d/<run_id>`. A snapshot is a copy taken once; a rebuild, fix or change of the same run
   restages `runtime/games` and leaves the demo as it was.
 - `maestro-shares` → `/app/runtime/shares`: games their owners shared, served at `/play/shares`
   and linked as `/g/<share_id>`. Frozen the same way; the owner refreshes or removes them.
@@ -114,6 +114,8 @@ docker compose exec -w /app/src app python -m auth.cli grant  <handle> <n>
 
 Demos are snapshots (`maestro/demos.py`): copy a staged game into the demos volume, then list its
 id under `demo_games` in settings.json. `--replace` is the only way an existing snapshot changes.
+Each listed demo has a direct link, `/d/<run_id>`; unlisting an id or removing its snapshot kills
+the link.
 
 ```bash
 docker compose exec -w /app/src app python -m maestro.demos snapshot <run_id> [--replace]
