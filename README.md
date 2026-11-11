@@ -2,8 +2,15 @@
 
 Type a game prompt, click go, a playable browser game comes out.
 
-How we work here is defined in `CLAUDE.md` and `docs/design-philosophy.md`, which should help get a
-handle on why we made the choices we've made.
+[![the words that summoned it, and the game](frontend/public/og.png)](https://gamesummoner.com)
+
+**Play them, no account needed:** demos available at [GameSummoner.com](https://gamesummoner.com)
+
+| [![Whisker Wizard](https://gamesummoner.com/api/demos/d086d499669b/thumb)](https://gamesummoner.com/g/r12ctNpfCeWH) | [![Fish Market Felines](https://gamesummoner.com/api/demos/1730d01639bc/thumb)](https://gamesummoner.com) | [![Singularity Shepherd](https://gamesummoner.com/api/demos/26b16c2ea111/thumb)](https://gamesummoner.com) |
+|---|---|---|
+| *"roguelike deckbuilder where you're a wizard cat climbing a tower"* — [play](https://gamesummoner.com/g/r12ctNpfCeWH) | *"a tower defense game where cats defend a fish market"* — [play](https://gamesummoner.com) | *"Guide a herd of glowing comets into a black hole by nudging them with your ship's tractor beam…"* — [play](https://gamesummoner.com) |
+
+All made from the single sentence underneath them.
 
 ## One command
 
@@ -107,7 +114,7 @@ The rest of the CLI (`--new`, `--assets`, `--history`, `--restore`, `--evict`) i
 |---|---|
 | `CLAUDE.md` | how we work |
 | `docs/*` | documentation on everything about GameSummoner |
-| `labs/` | past experiments in detail; its own repo, pulled separately |
+| `labs/` | past experiments in detail; [its own repo](https://github.com/ndamiano/gamesummoner-labs), pulled separately |
 
 ## Repository layout
 
